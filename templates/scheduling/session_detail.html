@@ -1,29 +1,55 @@
 {% extends "base.html" %}
 {% block content %}
+
 <h2>{{ session.title }}</h2>
 <p><b>When:</b> {{ session.start_datetime }}</p>
 <p><b>Where:</b> {{ session.location }}</p>
-<p><b>Capacity:</b> {{ session.capacity }}</p>
+
+<p><b>Capacity:</b> {{ current_count }} / {{ session.capacity }}
+{% if is_full %}<span> (FULL)</span>{% endif %}
+</p>
 
 {% if user.is_authenticated %}
   {% if not joined %}
-    <form method="post" action="/{{ session.id }}/join/">
-      {% csrf_token %}
-      <button type="submit">Join</button>
-    </form>
+    {% if not is_full %}
+      <form method="post" action="{% url 'join_session' session.id %}">
+        {% csrf_token %}
+        <button type="submit">Join</button>
+      </form>
+    {% else %}
+      <p>This session is full.</p>
+    {% endif %}
   {% else %}
     <p>You joined this session.</p>
+
+    <form method="post" action="{% url 'leave_session' session.id %}">
+      {% csrf_token %}
+      <button type="submit">Leave session</button>
+    </form>
   {% endif %}
 {% else %}
   <p><a href="/accounts/login/">Login</a> to join.</p>
 {% endif %}
 
+<hr>
+
 <h3>Participants</h3>
 <ul>
   {% for p in participants %}
-    <li>{{ p.user.username }} (attended: {{ p.attended }})</li>
+    <li>
+      {{ p.user.username }} (attended: {{ p.attended }})
+      {% if is_organiser %}
+        <form method="post" action="{% url 'toggle_attendance' session.id p.id %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit">
+            {% if p.attended %}Mark not attended{% else %}Mark attended{% endif %}
+          </button>
+        </form>
+      {% endif %}
+    </li>
   {% empty %}
     <li>No one joined yet.</li>
   {% endfor %}
 </ul>
+
 {% endblock %}

@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>{{ session.title }}</h2>
+  <p>Sorry. This session is full.</p>
+  <p><a href="{% url 'session_detail' session.id %}">Back to session</a></p>
+{% endblock %}

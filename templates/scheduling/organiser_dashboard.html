@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Organiser dashboard</h2>
+
+{% if sessions %}
+  <table border="1" cellpadding="6">
+    <tr>
+      <th>Session</th>
+      <th>Date/Time</th>
+      <th>Capacity</th>
+      <th>Joined</th>
+      <th>Attended</th>
+    </tr>
+    {% for s in sessions %}
+      <tr>
+        <td><a href="{% url 'session_detail' s.id %}">{{ s.title }}</a></td>
+        <td>{{ s.start_datetime }}</td>
+        <td>{{ s.capacity }}</td>
+        <td>{{ s.participant_count }}</td>
+        <td>{{ s.attended_count }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+{% else %}
+  <p>You haven’t created any sessions yet.</p>
+{% endif %}
+
+{% endblock %}

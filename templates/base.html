@@ -9,6 +9,7 @@
     <a href="/">Home</a>
     {% if user.is_authenticated %}
       <span>Logged in as {{ user.username }}</span>
+      <a href="{% url 'organiser_dashboard' %}">Organiser dashboard</a>
       <a href="/accounts/logout/">Logout</a>
     {% else %}
       <a href="/accounts/login/">Login</a>
