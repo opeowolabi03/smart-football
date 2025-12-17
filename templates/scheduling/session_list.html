@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Upcoming sessions</h2>
+
+<p><a href="/create/">Create a session</a></p>
+
+<ul>
+  {% for s in sessions %}
+    <li>
+      <a href="/{{ s.id }}/">{{ s.title }}</a>
+      ({{ s.start_datetime }} at {{ s.location }})
+    </li>
+  {% empty %}
+    <li>No sessions yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

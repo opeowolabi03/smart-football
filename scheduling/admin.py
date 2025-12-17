@@ -1,3 +1,5 @@
 from django.contrib import admin
+from .models import MatchSession, Participation
 
-# Register your models here.
+admin.site.register(MatchSession)
+admin.site.register(Participation)
