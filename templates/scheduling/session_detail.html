@@ -35,6 +35,19 @@
 
 <hr>
 
+{% if is_organiser %}
+  <h3>Organiser tools</h3>
+
+  <form method="post" action="{% url 'generate_teams' session.id %}">
+    {% csrf_token %}
+    <button type="submit">Generate teams</button>
+  </form>
+
+  <p><a href="{% url 'view_teams' session.id %}">View teams</a></p>
+
+  <hr>
+{% endif %}
+
 <h3>Participants</h3>
 <ul>
   {% for p in participants %}
@@ -55,3 +68,4 @@
 </ul>
 
 {% endblock %}
+

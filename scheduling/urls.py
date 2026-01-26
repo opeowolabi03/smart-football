@@ -11,5 +11,7 @@ urlpatterns = [
     path("<int:session_id>/leave/", views.leave_session, name="leave_session"),
     path("<int:session_id>/toggle-attendance/<int:participation_id>/", views.toggle_attendance, name="toggle_attendance"),
     path("<int:session_id>/rate/", views.rate_session, name="rate_session"),
+    path("<int:session_id>/teams/", views.view_teams, name="view_teams"),
+    path("<int:session_id>/generate-teams/", views.generate_teams, name="generate_teams"),
 
 ]

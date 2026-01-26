@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Teams for: {{ session.title }}</h2>
+
+<p><b>Team strength diff:</b> {{ diff|floatformat:2 }}</p>
+
+<table border="1" cellpadding="8">
+  <tr>
+    <th>Team 1 ({{ total1|floatformat:2 }})</th>
+    <th>Team 2 ({{ total2|floatformat:2 }})</th>
+  </tr>
+  <tr>
+    <td valign="top">
+      <ol>
+        {% for u in team1 %}
+          <li>{{ u.username }}</li>
+        {% empty %}
+          <li>No one assigned.</li>
+        {% endfor %}
+      </ol>
+    </td>
+    <td valign="top">
+      <ol>
+        {% for u in team2 %}
+          <li>{{ u.username }}</li>
+        {% empty %}
+          <li>No one assigned.</li>
+        {% endfor %}
+      </ol>
+    </td>
+  </tr>
+</table>
+
+{% endblock %}
