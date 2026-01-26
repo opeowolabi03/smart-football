@@ -5,18 +5,29 @@
   <title>Smart Football</title>
 </head>
 <body>
-  <nav>
-    <a href="/">Home</a>
-    {% if user.is_authenticated %}
-      <span>Logged in as {{ user.username }}</span>
+<nav>
+  <a href="/">Home</a>
+
+  {% if user.is_authenticated %}
+    <span>Logged in as {{ user.username }}</span>
+    <a href="/accounts/profile/">Profile</a>
+
+    {% if user.is_staff %}
       <a href="{% url 'organiser_dashboard' %}">Organiser dashboard</a>
-      <a href="/accounts/logout/">Logout</a>
-    {% else %}
-      <a href="/accounts/login/">Login</a>
-      <a href="/accounts/signup/">Sign up</a>
+      <a href="{% url 'session_create' %}">Create session</a>
     {% endif %}
-  </nav>
-  <hr>
-  {% block content %}{% endblock %}
+
+    <form method="post" action="{% url 'logout' %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit">Logout</button>
+    </form>
+  {% else %}
+    <a href="/accounts/login/">Login</a>
+    <a href="/accounts/signup/">Sign up</a>
+  {% endif %}
+</nav>
+
+<hr>
+{% block content %}{% endblock %}
 </body>
 </html>

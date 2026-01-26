@@ -5,7 +5,11 @@ from django import forms
 from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpResponseForbidden
-
+from django.contrib import messages
+from django.db.models import Avg
+from django.contrib.auth import get_user_model
+from .models import MatchSession, Participation, Rating
+from .forms import RatingForm
 from .models import MatchSession, Participation
 
 
@@ -16,12 +20,15 @@ class MatchSessionForm(forms.ModelForm):
 
 
 def session_list(request):
-    sessions = MatchSession.objects.filter(start_datetime__gte=timezone.now()).order_by("start_datetime")
+    sessions = MatchSession.objects.all().order_by("start_datetime")
     return render(request, "scheduling/session_list.html", {"sessions": sessions})
 
 
 @login_required
 def session_create(request):
+    if not request.user.is_staff:
+        return HttpResponseForbidden("Only organisers can create sessions.")
+
     if request.method == "POST":
         form = MatchSessionForm(request.POST)
         if form.is_valid():
@@ -74,6 +81,7 @@ def join_session(request, session_id):
 
     return redirect("session_detail", session_id=session.id)
 
+
 @login_required
 def leave_session(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
@@ -84,6 +92,7 @@ def leave_session(request, session_id):
     Participation.objects.filter(session=session, user=request.user).delete()
     return redirect("session_detail", session_id=session.id)
 
+
 @login_required
 def toggle_attendance(request, session_id, participation_id):
     session = get_object_or_404(MatchSession, id=session_id)
@@ -91,7 +100,6 @@ def toggle_attendance(request, session_id, participation_id):
     if request.method != "POST":
         return redirect("session_detail", session_id=session.id)
 
-    # Only organiser (session creator) can do this
     if request.user != session.created_by:
         return HttpResponseForbidden("Only the organiser can mark attendance.")
 
@@ -100,6 +108,7 @@ def toggle_attendance(request, session_id, participation_id):
     participation.save(update_fields=["attended"])
 
     return redirect("session_detail", session_id=session.id)
+
 
 @login_required
 def organiser_dashboard(request):
@@ -113,3 +122,65 @@ def organiser_dashboard(request):
         .order_by("-start_datetime")
     )
     return render(request, "scheduling/organiser_dashboard.html", {"sessions": sessions})
+
+@login_required
+def rate_session(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    # must have joined
+    if not Participation.objects.filter(session=session, user=request.user).exists():
+        return HttpResponseForbidden("Join the session before rating.")
+
+    # only after session time (basic rule)
+    if timezone.now() < session.start_datetime:
+        return HttpResponseForbidden("You can rate after the session time.")
+
+    participants = (
+        Participation.objects.filter(session=session)
+        .select_related("user")
+        .order_by("user__username")
+    )
+
+    # people you can rate (exclude yourself)
+    ratees = [p.user for p in participants if p.user_id != request.user.id]
+
+    if request.method == "POST":
+        # handle multiple forms in one post
+        for u in ratees:
+            prefix = f"user_{u.id}"
+            form = RatingForm(request.POST, prefix=prefix)
+            if form.is_valid():
+                score = form.cleaned_data["score"]
+                comment = form.cleaned_data["comment"]
+
+                Rating.objects.update_or_create(
+                    session=session,
+                    rater=request.user,
+                    ratee=u,
+                    defaults={"score": score, "comment": comment},
+                )
+
+        # update overall_rating for each ratee (simple avg of all received ratings)
+        for u in ratees:
+            avg_score = Rating.objects.filter(ratee=u).aggregate(avg=Avg("score"))["avg"] or 0.0
+            if hasattr(u, "profile"):
+                u.profile.overall_rating = float(avg_score)
+                u.profile.save(update_fields=["overall_rating"])
+
+        messages.success(request, "Ratings saved.")
+        return redirect("session_detail", session_id=session.id)
+
+    forms = []
+    existing = {
+        r.ratee_id: r for r in Rating.objects.filter(session=session, rater=request.user)
+    }
+    for u in ratees:
+        initial = {}
+        if u.id in existing:
+            initial = {"ratee_id": u.id, "score": existing[u.id].score, "comment": existing[u.id].comment}
+        else:
+            initial = {"ratee_id": u.id, "score": 3, "comment": ""}
+
+        forms.append((u, RatingForm(prefix=f"user_{u.id}", initial=initial)))
+
+    return render(request, "scheduling/rate_session.html", {"session": session, "forms": forms})

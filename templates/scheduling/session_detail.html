@@ -10,6 +10,8 @@
 </p>
 
 {% if user.is_authenticated %}
+  <p><a href="{% url 'rate_session' session.id %}">Rate this session</a></p>
+
   {% if not joined %}
     {% if not is_full %}
       <form method="post" action="{% url 'join_session' session.id %}">

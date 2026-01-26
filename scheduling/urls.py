@@ -10,4 +10,6 @@ urlpatterns = [
     path("<int:session_id>/join/", views.join_session, name="join_session"),
     path("<int:session_id>/leave/", views.leave_session, name="leave_session"),
     path("<int:session_id>/toggle-attendance/<int:participation_id>/", views.toggle_attendance, name="toggle_attendance"),
+    path("<int:session_id>/rate/", views.rate_session, name="rate_session"),
+
 ]
