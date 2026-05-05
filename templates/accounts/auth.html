@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="auth-page">
+  <div class="decor decor-left">☁</div>
+  <div class="decor decor-right">⚽</div>
+
+  <div class="auth-hero">
+    <div class="hero-ball">⚽</div>
+
+    <h1>Welcome to Smart Football</h1>
+
+    <p>
+      Organise community football matches fairly and easily.
+      Create games, manage players, and keep every session balanced.
+    </p>
+  </div>
+
+  <div class="auth-card">
+    <section class="auth-panel" id="login">
+      <div class="panel-heading">
+        <span class="panel-icon">🔒</span>
+        <h2>Login</h2>
+      </div>
+
+      <form method="post" action="{% url 'login' %}">
+        {% csrf_token %}
+
+        {% if login_form.non_field_errors %}
+          <div class="form-errors">
+            {{ login_form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <div class="form-group">
+          <label for="{{ login_form.username.id_for_label }}">Username</label>
+          {{ login_form.username }}
+
+          {% if login_form.username.errors %}
+            <div class="field-errors">
+              {{ login_form.username.errors }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="{{ login_form.password.id_for_label }}">Password</label>
+          {{ login_form.password }}
+
+          {% if login_form.password.errors %}
+            <div class="field-errors">
+              {{ login_form.password.errors }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="form-row-between">
+          <label class="checkbox-label">
+            <input type="checkbox" name="remember_me">
+            Remember me
+          </label>
+
+          <a class="small-link" href="#">Forgot password?</a>
+        </div>
+
+        <button class="btn btn-secondary" type="submit" name="login_submit">
+          Login
+        </button>
+      </form>
+    </section>
+
+    <div class="auth-divider"></div>
+
+    <section class="auth-panel" id="signup">
+      <div class="panel-heading">
+        <span class="panel-icon">👤</span>
+        <h2>Sign Up</h2>
+      </div>
+
+      <form method="post" action="{% url 'signup' %}">
+        {% csrf_token %}
+
+        {% if signup_form.non_field_errors %}
+          <div class="form-errors">
+            {{ signup_form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <div class="form-group">
+          <label for="{{ signup_form.username.id_for_label }}">Username</label>
+          {{ signup_form.username }}
+
+          {% if signup_form.username.errors %}
+            <div class="field-errors">
+              {{ signup_form.username.errors }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="{{ signup_form.email.id_for_label }}">Email</label>
+          {{ signup_form.email }}
+
+          {% if signup_form.email.errors %}
+            <div class="field-errors">
+              {{ signup_form.email.errors }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="{{ signup_form.password1.id_for_label }}">Password</label>
+          {{ signup_form.password1 }}
+
+          {% if signup_form.password1.errors %}
+            <div class="field-errors">
+              {{ signup_form.password1.errors }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="{{ signup_form.password2.id_for_label }}">Confirm Password</label>
+          {{ signup_form.password2 }}
+
+          {% if signup_form.password2.errors %}
+            <div class="field-errors">
+              {{ signup_form.password2.errors }}
+            </div>
+          {% endif %}
+        </div>
+
+        <button class="btn btn-primary" type="submit" name="signup_submit">
+          Create Account
+        </button>
+      </form>
+    </section>
+  </div>
+
+  <div class="auth-switch-row">
+    <span>Already have an account? <a href="{% url 'login' %}#login">Log in</a></span>
+    <span>New here? <a href="{% url 'signup' %}#signup">Create an account</a></span>
+  </div>
+</section>
+
+{% endblock %}

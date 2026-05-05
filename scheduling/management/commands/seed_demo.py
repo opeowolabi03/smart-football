@@ -48,3 +48,4 @@ class Command(BaseCommand):
                 Participation.objects.get_or_create(session=s, user=u)
 
         self.stdout.write(self.style.SUCCESS("Seeded demo data. Login: organiser / password123"))
+        
