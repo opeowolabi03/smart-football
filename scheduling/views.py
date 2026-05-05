@@ -296,35 +296,156 @@ from django.shortcuts import get_object_or_404, render
 # make sure TeamAssignment is imported at the top:
 # from .models import MatchSession, Participation, TeamAssignment
 
+def _profile_score(user):
+    try:
+        profile = user.profile
+    except Exception:
+        return 0
+
+    experience_scores = {
+        "beginner": 1,
+        "intermediate": 2,
+        "advanced": 3,
+    }
+
+    experience_value = experience_scores.get(str(getattr(profile, "experience", "")).lower(), 1)
+
+    return (
+        (getattr(profile, "skill_level", 0) * 2)
+        + getattr(profile, "fitness_level", 0)
+        + experience_value
+    )
+
+
+def _attendance_percentage(count, total):
+    if total <= 0:
+        return 0
+
+    return round((count / total) * 100)
+
+
 def session_detail(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
-    participants = Participation.objects.filter(session=session).select_related("user").order_by("user__username")
+
+    participants = (
+        Participation.objects
+        .filter(session=session)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    current_count = participants.count()
+    is_full = current_count >= session.capacity
+    is_completed = session.start_datetime < timezone.now()
+    status_label = "Completed" if is_completed else "Upcoming"
 
     joined = False
     if request.user.is_authenticated:
         joined = Participation.objects.filter(session=session, user=request.user).exists()
 
-    current_count = Participation.objects.filter(session=session).count()
-    is_full = current_count >= session.capacity
+    is_organiser = request.user.is_authenticated and request.user == session.created_by
 
-    # NEW: fetch saved teams
-    team_a = TeamAssignment.objects.filter(
-        session=session, team=TeamAssignment.TEAM_A
-    ).select_related("user").order_by("user__username")
+    attended_count = participants.filter(attended=True).count()
+    not_marked_count = current_count - attended_count
 
-    team_b = TeamAssignment.objects.filter(
-        session=session, team=TeamAssignment.TEAM_B
-    ).select_related("user").order_by("user__username")
+    attended_percentage = _attendance_percentage(attended_count, current_count)
+    not_marked_percentage = _attendance_percentage(not_marked_count, current_count)
+
+    participant_rows = []
+
+    for participation in participants:
+        user = participation.user
+
+        try:
+            role = user.profile.get_role_display()
+        except Exception:
+            role = "Player"
+
+        if user == session.created_by:
+            role = "Organiser"
+
+        participant_rows.append({
+            "participation": participation,
+            "user": user,
+            "role": role,
+            "score": _profile_score(user),
+        })
+
+    team_a_assignments = (
+        TeamAssignment.objects
+        .filter(session=session, team=TeamAssignment.TEAM_A)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    team_b_assignments = (
+        TeamAssignment.objects
+        .filter(session=session, team=TeamAssignment.TEAM_B)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    team_a_rows = []
+    team_b_rows = []
+
+    for assignment in team_a_assignments:
+        score = _profile_score(assignment.user)
+        team_a_rows.append({
+            "assignment": assignment,
+            "user": assignment.user,
+            "score": score,
+        })
+
+    for assignment in team_b_assignments:
+        score = _profile_score(assignment.user)
+        team_b_rows.append({
+            "assignment": assignment,
+            "user": assignment.user,
+            "score": score,
+        })
+
+    team_a_total = sum(row["score"] for row in team_a_rows)
+    team_b_total = sum(row["score"] for row in team_b_rows)
+
+    team_a_average = round(team_a_total / len(team_a_rows), 1) if team_a_rows else 0
+    team_b_average = round(team_b_total / len(team_b_rows), 1) if team_b_rows else 0
+
+    capacity_percentage = _attendance_percentage(current_count, session.capacity)
+
+    average_session_rating = Rating.objects.filter(session=session).aggregate(
+        average=Avg("score")
+    )["average"]
+
+    if average_session_rating is not None:
+        average_session_rating = round(average_session_rating, 1)
 
     return render(request, "scheduling/session_detail.html", {
         "session": session,
         "participants": participants,
+        "participant_rows": participant_rows,
+
         "joined": joined,
         "is_full": is_full,
+        "is_completed": is_completed,
+        "status_label": status_label,
+        "is_organiser": is_organiser,
+
         "current_count": current_count,
-        "team_a": team_a,     # NEW
-        "team_b": team_b,     # NEW
-        "is_organiser": request.user.is_authenticated and (request.user == session.created_by),
+        "capacity_percentage": capacity_percentage,
+
+        "attended_count": attended_count,
+        "not_marked_count": not_marked_count,
+        "attended_percentage": attended_percentage,
+        "not_marked_percentage": not_marked_percentage,
+
+        "team_a_rows": team_a_rows,
+        "team_b_rows": team_b_rows,
+        "team_a_total": team_a_total,
+        "team_b_total": team_b_total,
+        "team_a_average": team_a_average,
+        "team_b_average": team_b_average,
+
+        "average_session_rating": average_session_rating,
     })
 
 @login_required

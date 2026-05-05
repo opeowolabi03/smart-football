@@ -154,7 +154,10 @@
                     <div class="table-session-title">
                       <span class="table-session-icon">📅</span>
                       <div>
-                        <strong>{{ session.title }}</strong>
+                        <a class="session-title-link" href="{% url 'session_detail' session.id %}">
+                          {{ session.title }}
+                        </a>
+
                         <small>
                           {% if session.created_by %}
                             Created by {{ session.created_by.username }}

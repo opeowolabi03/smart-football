@@ -1,97 +1,365 @@
 {% extends "base.html" %}
+
 {% block content %}
 
-<h2>{{ session.title }}</h2>
-<p><b>When:</b> {{ session.start_datetime }}</p>
-<p><b>Where:</b> {{ session.location }}</p>
+<section class="dashboard-page">
+  <div class="dashboard-layout">
 
-<p><b>Capacity:</b> {{ current_count }} / {{ session.capacity }}
-{% if is_full %}<span> (FULL)</span>{% endif %}
-</p>
-
-{% if user.is_authenticated %}
-  <p><a href="{% url 'rate_session' session.id %}">Rate this session</a></p>
-
-  {% if not joined %}
-    {% if not is_full %}
-      <form method="post" action="{% url 'join_session' session.id %}">
-        {% csrf_token %}
-        <button type="submit">Join</button>
-      </form>
-    {% else %}
-      <p>This session is full.</p>
-    {% endif %}
-  {% else %}
-    <p>You joined this session.</p>
-
-    <form method="post" action="{% url 'leave_session' session.id %}">
-      {% csrf_token %}
-      <button type="submit">Leave session</button>
-    </form>
-  {% endif %}
-{% else %}
-  <p><a href="/accounts/login/">Login</a> to join.</p>
-{% endif %}
-
-<hr>
-
-{% if is_organiser %}
-  <h3>Organiser tools</h3>
-
-  <form method="post" action="{% url 'generate_teams' session.id %}">
-    {% csrf_token %}
-    <button type="submit">Generate teams</button>
-  </form>
-
-  <h4>Teams</h4>
-  {% if team_a or team_b %}
-    <div style="display:flex; gap:40px; margin-top:12px;">
-      <div>
-        <h5>Team A</h5>
-        <ul>
-          {% for a in team_a %}
-            <li>{{ a.user.username }}</li>
-          {% empty %}
-            <li>No players</li>
-          {% endfor %}
-        </ul>
+    <aside class="dashboard-sidebar">
+      <div class="sidebar-title">
+        <span>⚽</span>
+        <strong>Smart Football</strong>
       </div>
 
-      <div>
-        <h5>Team B</h5>
-        <ul>
-          {% for b in team_b %}
-            <li>{{ b.user.username }}</li>
-          {% empty %}
-            <li>No players</li>
-          {% endfor %}
-        </ul>
+      <nav class="sidebar-nav">
+        <a class="sidebar-link" href="{% url 'player_dashboard' %}">
+          <span>🏠</span>
+          Dashboard
+        </a>
+
+        <a class="sidebar-link active" href="{% url 'session_list' %}">
+          <span>📅</span>
+          All Sessions
+        </a>
+
+        <a class="sidebar-link" href="{% url 'edit_profile' %}">
+          <span>👤</span>
+          My Profile
+        </a>
+
+        <a class="sidebar-link" href="{% url 'organiser_dashboard' %}">
+          <span>📊</span>
+          Organiser Dashboard
+        </a>
+
+        <span class="sidebar-link sidebar-muted">
+          <span>💬</span>
+          Messages
+        </span>
+      </nav>
+    </aside>
+
+    <div class="dashboard-main">
+
+      <div class="match-breadcrumb">
+        <a href="{% url 'session_list' %}">All Sessions</a>
+        <span>›</span>
+        <strong>{{ session.title }}</strong>
       </div>
+
+      <section class="match-hero-card">
+        <div class="match-date-box">
+          <span>{{ session.start_datetime|date:"D" }}</span>
+          <strong>{{ session.start_datetime|date:"d" }}</strong>
+          <span>{{ session.start_datetime|date:"M" }}</span>
+        </div>
+
+        <div class="match-main-info">
+          <h1>{{ session.title }}</h1>
+
+          <div class="match-meta-row">
+            <span>🕒 {{ session.start_datetime|time:"g:i A" }}</span>
+            <span>📍 {{ session.location }}</span>
+            <span>👥 {{ current_count }} / {{ session.capacity }} joined</span>
+          </div>
+
+          <p>
+            Community football session for players of different skill levels.
+            Join the session, track attendance, and generate fair teams.
+          </p>
+        </div>
+
+        <div class="match-status-panel">
+          {% if is_full %}
+            <span class="status-badge status-full">Full</span>
+          {% elif status_label == "Upcoming" %}
+            <span class="status-badge status-upcoming">Upcoming</span>
+          {% else %}
+            <span class="status-badge status-completed">Completed</span>
+          {% endif %}
+
+          <strong>{{ current_count }} / {{ session.capacity }}</strong>
+          <small>players joined</small>
+
+          <div class="capacity-bar">
+            <div style="width: {{ capacity_percentage }}%;"></div>
+          </div>
+        </div>
+
+        <div class="match-action-stack">
+          {% if user.is_authenticated %}
+            {% if joined %}
+              <form method="post" action="{% url 'leave_session' session.id %}">
+                {% csrf_token %}
+                <button class="btn btn-danger" type="submit">Leave Session</button>
+              </form>
+            {% else %}
+              {% if not is_full %}
+                <form method="post" action="{% url 'join_session' session.id %}">
+                  {% csrf_token %}
+                  <button class="btn btn-primary" type="submit">Join Session</button>
+                </form>
+              {% else %}
+                <button class="btn btn-disabled" type="button">Session Full</button>
+              {% endif %}
+            {% endif %}
+          {% else %}
+            <a class="btn btn-primary" href="{% url 'login' %}">Login to Join</a>
+          {% endif %}
+
+          <a class="btn btn-outline" href="{% url 'session_list' %}">Back to Sessions</a>
+        </div>
+      </section>
+
+      <div class="match-tabs">
+        <a class="active" href="#overview">Overview</a>
+        <a href="#participants">Participants</a>
+        <a href="#teams">Teams</a>
+        <a href="#attendance">Attendance</a>
+      </div>
+
+      <section class="match-detail-grid" id="overview">
+        <div class="match-left-column">
+
+          <section class="detail-card" id="participants">
+            <div class="detail-card-heading">
+              <h2>Participants ({{ current_count }} / {{ session.capacity }})</h2>
+            </div>
+
+            <div class="participants-table-wrap">
+              <table class="participants-table">
+                <thead>
+                  <tr>
+                    <th>Player</th>
+                    <th>Role</th>
+                    <th>Attendance</th>
+                    {% if is_organiser %}
+                      <th>Action</th>
+                    {% endif %}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {% for row in participant_rows %}
+                    <tr>
+                      <td>
+                        <div class="participant-name">
+                          <span>👤</span>
+                          <strong>
+                            {{ row.user.username }}
+                            {% if row.user == user %}(You){% endif %}
+                          </strong>
+                        </div>
+                      </td>
+
+                      <td>
+                        {% if row.role == "Organiser" %}
+                          <span class="role-badge organiser-role">Organiser</span>
+                        {% else %}
+                          <span class="role-badge">Player</span>
+                        {% endif %}
+                      </td>
+
+                      <td>
+                        {% if row.participation.attended %}
+                          <span class="attendance-status attendance-yes">✓ Attended</span>
+                        {% else %}
+                          <span class="attendance-status attendance-pending">Not marked</span>
+                        {% endif %}
+                      </td>
+
+                      {% if is_organiser %}
+                        <td>
+                          <form method="post" action="{% url 'toggle_attendance' session.id row.participation.id %}">
+                            {% csrf_token %}
+                            <button class="mini-outline-btn" type="submit">
+                              {% if row.participation.attended %}
+                                Mark not attended
+                              {% else %}
+                                Mark attended
+                              {% endif %}
+                            </button>
+                          </form>
+                        </td>
+                      {% endif %}
+                    </tr>
+                  {% empty %}
+                    <tr>
+                      <td colspan="4">No participants have joined yet.</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="detail-card" id="attendance">
+            <div class="detail-card-heading">
+              <h2>Attendance</h2>
+            </div>
+
+            <div class="attendance-summary">
+              <div class="attendance-ring-card">
+                <div class="fake-ring success-ring">{{ attended_count }}</div>
+                <strong>{{ attended_percentage }}%</strong>
+                <span>Attended</span>
+              </div>
+
+              <div class="attendance-ring-card">
+                <div class="fake-ring neutral-ring">{{ not_marked_count }}</div>
+                <strong>{{ not_marked_percentage }}%</strong>
+                <span>Not marked</span>
+              </div>
+
+              {% if joined %}
+                <form method="post" action="{% url 'leave_session' session.id %}">
+                  {% csrf_token %}
+                  <button class="btn btn-outline btn-attendance" type="submit">
+                    Leave Session
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          </section>
+        </div>
+
+        <div class="match-right-column">
+
+          <section class="detail-card" id="teams">
+            <div class="detail-card-heading teams-heading">
+              <h2>Generated Teams</h2>
+
+              {% if is_organiser %}
+                <form method="post" action="{% url 'generate_teams' session.id %}">
+                  {% csrf_token %}
+                  <button class="mini-outline-btn" type="submit">
+                    Regenerate Teams
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+
+            {% if team_a_rows or team_b_rows %}
+              <div class="teams-grid">
+                <div class="team-panel team-a-panel">
+                  <div class="team-panel-heading">
+                    <h3>Team A</h3>
+                    <span>Avg score: {{ team_a_average }}</span>
+                  </div>
+
+                  <div class="team-player-list">
+                    {% for row in team_a_rows %}
+                      <div class="team-player">
+                        <span>👤 {{ row.user.username }}</span>
+                        <strong>{{ row.score }}</strong>
+                      </div>
+                    {% empty %}
+                      <div class="open-slot">No players</div>
+                    {% endfor %}
+                  </div>
+
+                  <div class="team-total">Total: {{ team_a_total }}</div>
+                </div>
+
+                <div class="team-panel team-b-panel">
+                  <div class="team-panel-heading">
+                    <h3>Team B</h3>
+                    <span>Avg score: {{ team_b_average }}</span>
+                  </div>
+
+                  <div class="team-player-list">
+                    {% for row in team_b_rows %}
+                      <div class="team-player">
+                        <span>👤 {{ row.user.username }}</span>
+                        <strong>{{ row.score }}</strong>
+                      </div>
+                    {% empty %}
+                      <div class="open-slot">No players</div>
+                    {% endfor %}
+                  </div>
+
+                  <div class="team-total">Total: {{ team_b_total }}</div>
+                </div>
+              </div>
+            {% else %}
+              <div class="empty-state">
+                <h3>No teams generated yet</h3>
+                <p>The organiser can generate teams once players have joined.</p>
+
+                {% if is_organiser %}
+                  <form method="post" action="{% url 'generate_teams' session.id %}">
+                    {% csrf_token %}
+                    <button class="btn btn-secondary btn-small" type="submit">
+                      Generate Teams
+                    </button>
+                  </form>
+                {% endif %}
+              </div>
+            {% endif %}
+
+            <div class="team-info-note">
+              Teams are generated using player skill level, fitness, and experience to support fairer allocation.
+            </div>
+
+            <div class="team-actions-row">
+              {% if is_organiser %}
+                <form method="post" action="{% url 'generate_teams' session.id %}">
+                  {% csrf_token %}
+                  <button class="btn btn-outline btn-small" type="submit">
+                    Regenerate Teams
+                  </button>
+                </form>
+              {% endif %}
+
+              <a class="btn btn-outline btn-small" href="{% url 'session_list' %}">
+                View Sessions
+              </a>
+
+              <a class="btn btn-secondary btn-small" href="{% url 'rate_session' session.id %}">
+                Rate Session
+              </a>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="detail-card session-info-card">
+        <h2>Session Information</h2>
+
+        <div class="session-info-grid">
+          <div>
+            <span>Created by</span>
+            <strong>{{ session.created_by.username }}</strong>
+          </div>
+
+          <div>
+            <span>Match Format</span>
+            <strong>5-a-side</strong>
+          </div>
+
+          <div>
+            <span>Skill Range</span>
+            <strong>All levels</strong>
+          </div>
+
+          <div>
+            <span>Equipment</span>
+            <strong>Bring your own</strong>
+          </div>
+
+          <div>
+            <span>Rating</span>
+            {% if average_session_rating %}
+              <strong>{{ average_session_rating }} / 5</strong>
+            {% else %}
+              <strong>No ratings yet</strong>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
     </div>
-  {% else %}
-    <p>No teams generated yet.</p>
-  {% endif %}
-
-  <hr>
-{% endif %}
-
-<h3>Participants</h3>
-<ul>
-  {% for p in participants %}
-    <li>
-      {{ p.user.username }} (attended: {{ p.attended }})
-      {% if is_organiser %}
-        <form method="post" action="{% url 'toggle_attendance' session.id p.id %}" style="display:inline;">
-          {% csrf_token %}
-          <button type="submit">
-            {% if p.attended %}Mark not attended{% else %}Mark attended{% endif %}
-          </button>
-        </form>
-      {% endif %}
-    </li>
-  {% empty %}
-    <li>No one joined yet.</li>
-  {% endfor %}
-</ul>
+  </div>
+</section>
 
 {% endblock %}
