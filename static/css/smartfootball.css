@@ -1897,3 +1897,548 @@ label {
   color: var(--primary);
   text-decoration: underline;
 }
+
+/* ===== EDIT PROFILE PAGE ===== */
+
+.profile-edit-header {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 28px 32px;
+  margin-bottom: 22px;
+}
+
+.profile-edit-header .eyebrow {
+  color: var(--primary);
+  font-weight: 900;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.profile-edit-header h1 {
+  margin: 0 0 8px;
+  color: var(--secondary);
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  letter-spacing: -0.06em;
+}
+
+.profile-edit-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.profile-edit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 22px;
+  align-items: start;
+}
+
+.profile-edit-card,
+.edit-profile-summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.profile-edit-card {
+  overflow: hidden;
+}
+
+.profile-form-section {
+  padding: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-form-section h2,
+.edit-profile-summary-card h2 {
+  margin: 0 0 18px;
+  color: var(--secondary);
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+}
+
+.profile-form-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.profile-form-grid.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.profile-form-footer {
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  background: #FBFCFE;
+}
+
+.profile-cancel-btn,
+.profile-save-btn {
+  width: auto;
+  min-width: 170px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.football-rating {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0 10px;
+}
+
+.football-rating button {
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #F9FAFB;
+  font-size: 1.55rem;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.45;
+  transition: transform 0.12s ease, opacity 0.12s ease, filter 0.12s ease, border-color 0.12s ease;
+}
+
+.football-rating button:hover {
+  transform: translateY(-1px);
+  opacity: 0.8;
+  border-color: var(--primary);
+}
+
+.football-rating button.active {
+  background: rgba(11, 110, 79, 0.10);
+  border-color: rgba(11, 110, 79, 0.35);
+  filter: grayscale(0);
+  opacity: 1;
+}
+
+.rating-caption {
+  margin: 0;
+  color: var(--text-muted);
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.profile-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.edit-profile-summary-card {
+  padding: 22px;
+}
+
+.edit-profile-user {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.edit-profile-avatar {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(11, 110, 79, 0.10);
+  border: 1px solid rgba(11, 110, 79, 0.20);
+  font-size: 2rem;
+}
+
+.edit-profile-user strong {
+  display: block;
+  color: var(--secondary);
+  font-size: 1.05rem;
+}
+
+.edit-profile-user p {
+  margin: 4px 0 8px;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.active-member-pill {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.10);
+  border: 1px solid rgba(22, 163, 74, 0.24);
+  color: var(--success);
+  font-weight: 900;
+  font-size: 0.78rem;
+}
+
+.edit-profile-facts,
+.account-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 0;
+}
+
+.edit-profile-facts div,
+.account-facts div {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.edit-profile-facts span,
+.account-facts span {
+  color: var(--text-muted);
+  font-weight: 850;
+}
+
+.edit-profile-facts strong,
+.account-facts strong {
+  color: var(--secondary);
+  text-align: right;
+}
+
+.ball-summary {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.ball-active {
+  filter: grayscale(0);
+  opacity: 1;
+}
+
+.ball-inactive {
+  filter: grayscale(1);
+  opacity: 0.28;
+}
+
+.profile-help-card {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.profile-help-card p {
+  margin: 0;
+  color: #1E3A8A;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+@media (max-width: 1180px) {
+  .profile-edit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .profile-form-grid.two-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-form-footer {
+    flex-direction: column;
+  }
+
+  .profile-cancel-btn,
+  .profile-save-btn {
+    width: 100%;
+  }
+
+  .football-rating {
+    flex-wrap: wrap;
+  }
+
+  .edit-profile-facts div,
+  .account-facts div {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .edit-profile-facts strong,
+  .account-facts strong {
+    text-align: left;
+  }
+}
+
+/* ===== FIX FOOTBALL RATING SIZE ===== */
+
+.football-rating {
+  gap: 7px;
+  flex-wrap: nowrap;
+}
+
+.football-rating button {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 12px;
+  font-size: 1.12rem;
+  padding: 0;
+}
+
+.rating-caption {
+  font-size: 0.86rem;
+  margin-top: 6px;
+}
+
+.ball-summary {
+  gap: 1px;
+  font-size: 0.9rem;
+}
+.session-title-link {
+  color: var(--text-main);
+  text-decoration: none;
+  font-weight: 900;
+}
+
+.session-title-link:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* ===== CREATE MATCH PAGE ===== */
+
+.create-page-header {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 28px 32px;
+  margin-bottom: 22px;
+}
+
+.create-page-header .eyebrow {
+  color: var(--primary);
+  font-weight: 900;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.create-page-header h1 {
+  margin: 0 0 8px;
+  color: var(--secondary);
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  letter-spacing: -0.06em;
+}
+
+.create-page-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.create-match-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 22px;
+  align-items: start;
+}
+
+.create-match-card,
+.create-side-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.create-match-card {
+  overflow: hidden;
+}
+
+.create-form-section {
+  padding: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.create-form-section h2,
+.create-side-card h2 {
+  margin: 0 0 18px;
+  color: var(--primary);
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+}
+
+.create-form-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.create-form-grid.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field-hint {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.create-note-box {
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  color: #1E3A8A;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.create-form-footer {
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  background: #FBFCFE;
+}
+
+.create-cancel-btn,
+.create-submit-btn {
+  width: auto;
+  min-width: 170px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.create-side-card {
+  padding: 22px;
+}
+
+.guideline-card {
+  background: linear-gradient(135deg, rgba(11, 110, 79, 0.08), white);
+}
+
+.guideline-card p {
+  margin: 0 0 14px;
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.guideline-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.guideline-card li {
+  color: var(--text-main);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.guideline-card li::before {
+  content: "✓";
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(22, 163, 74, 0.10);
+  border: 1px solid rgba(22, 163, 74, 0.28);
+  color: var(--success);
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.match-preview-card h2 {
+  color: var(--secondary);
+}
+
+.preview-row {
+  min-height: 54px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.preview-row:last-child {
+  border-bottom: 0;
+}
+
+.preview-row span {
+  color: var(--text-muted);
+  font-weight: 850;
+}
+
+.preview-row strong {
+  color: var(--secondary);
+  text-align: right;
+}
+
+.create-tip-card {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.create-tip-card h2 {
+  color: var(--info);
+}
+
+.create-tip-card p {
+  margin: 0;
+  color: #1E3A8A;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+@media (max-width: 1180px) {
+  .create-match-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .create-form-grid.two-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .create-form-footer {
+    flex-direction: column;
+  }
+
+  .create-cancel-btn,
+  .create-submit-btn {
+    width: 100%;
+  }
+
+  .preview-row {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 12px 0;
+  }
+
+  .preview-row strong {
+    text-align: left;
+  }
+}

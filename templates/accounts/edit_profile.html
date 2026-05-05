@@ -1,10 +1,326 @@
 {% extends "base.html" %}
-{% block content %}
-  <h2>Edit profile</h2>
 
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Save</button>
-  </form>
+{% block content %}
+
+<section class="dashboard-page">
+  <div class="dashboard-layout">
+
+    <aside class="dashboard-sidebar">
+      <div class="sidebar-title">
+        <span>⚽</span>
+        <strong>Smart Football</strong>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="sidebar-link" href="{% url 'player_dashboard' %}">
+          <span>🏠</span>
+          Dashboard
+        </a>
+
+        <a class="sidebar-link" href="{% url 'session_list' %}">
+          <span>📅</span>
+          All Sessions
+        </a>
+
+        <a class="sidebar-link active" href="{% url 'edit_profile' %}">
+          <span>👤</span>
+          My Profile
+        </a>
+
+        <a class="sidebar-link" href="{% url 'organiser_dashboard' %}">
+          <span>📊</span>
+          Organiser Dashboard
+        </a>
+
+        <span class="sidebar-link sidebar-muted">
+          <span>💬</span>
+          Messages
+        </span>
+      </nav>
+    </aside>
+
+    <div class="dashboard-main">
+
+      <div class="profile-edit-header">
+        <div>
+          <p class="eyebrow">My Profile</p>
+          <h1>Edit Player Profile</h1>
+          <p>Update your information to help create fairer football sessions.</p>
+        </div>
+      </div>
+
+      <section class="profile-edit-grid">
+
+        <form class="profile-edit-card" method="post">
+          {% csrf_token %}
+
+          {% if form.non_field_errors %}
+            <div class="form-errors">
+              {{ form.non_field_errors }}
+            </div>
+          {% endif %}
+
+          <div class="profile-form-section">
+            <h2>Personal Information</h2>
+
+            <div class="profile-form-grid two-cols">
+              <div class="form-group">
+                <label for="{{ form.full_name.id_for_label }}">Full Name</label>
+                {{ form.full_name }}
+
+                {% if form.full_name.errors %}
+                  <div class="field-errors">{{ form.full_name.errors }}</div>
+                {% endif %}
+              </div>
+
+              <div class="form-group">
+                <label for="{{ form.email.id_for_label }}">Email</label>
+                {{ form.email }}
+
+                {% if form.email.errors %}
+                  <div class="field-errors">{{ form.email.errors }}</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-form-section">
+            <h2>Playing Preferences</h2>
+
+            <div class="profile-form-grid two-cols">
+              <div class="form-group">
+                <label for="{{ form.position_preference.id_for_label }}">Preferred Position</label>
+                {{ form.position_preference }}
+
+                {% if form.position_preference.errors %}
+                  <div class="field-errors">{{ form.position_preference.errors }}</div>
+                {% endif %}
+              </div>
+
+              <div class="form-group">
+                <label for="{{ form.experience.id_for_label }}">Experience Level</label>
+                {{ form.experience }}
+
+                {% if form.experience.errors %}
+                  <div class="field-errors">{{ form.experience.errors }}</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-form-section">
+            <h2>Skill & Fitness</h2>
+
+            <div class="profile-form-grid two-cols">
+
+              <div class="form-group">
+                <label>Skill Level</label>
+
+                <div
+                  class="football-rating"
+                  data-input-id="{{ form.skill_level.id_for_label }}"
+                  data-label-id="skill-rating-label"
+                >
+                  <button type="button" data-value="1">⚽</button>
+                  <button type="button" data-value="2">⚽</button>
+                  <button type="button" data-value="3">⚽</button>
+                  <button type="button" data-value="4">⚽</button>
+                  <button type="button" data-value="5">⚽</button>
+                </div>
+
+                {{ form.skill_level }}
+
+                <p class="rating-caption" id="skill-rating-label">
+                  Current rating: {{ profile_summary.skill.value }} / 5
+                </p>
+
+                {% if form.skill_level.errors %}
+                  <div class="field-errors">{{ form.skill_level.errors }}</div>
+                {% endif %}
+              </div>
+
+              <div class="form-group">
+                <label>Fitness Level</label>
+
+                <div
+                  class="football-rating"
+                  data-input-id="{{ form.fitness_level.id_for_label }}"
+                  data-label-id="fitness-rating-label"
+                >
+                  <button type="button" data-value="1">⚽</button>
+                  <button type="button" data-value="2">⚽</button>
+                  <button type="button" data-value="3">⚽</button>
+                  <button type="button" data-value="4">⚽</button>
+                  <button type="button" data-value="5">⚽</button>
+                </div>
+
+                {{ form.fitness_level }}
+
+                <p class="rating-caption" id="fitness-rating-label">
+                  Current rating: {{ profile_summary.fitness.value }} / 5
+                </p>
+
+                {% if form.fitness_level.errors %}
+                  <div class="field-errors">{{ form.fitness_level.errors }}</div>
+                {% endif %}
+              </div>
+
+            </div>
+          </div>
+
+          <div class="profile-form-footer">
+            <a class="btn btn-outline profile-cancel-btn" href="{% url 'player_dashboard' %}">
+              Cancel
+            </a>
+
+            <button class="btn btn-secondary profile-save-btn" type="submit">
+              Save Changes
+            </button>
+          </div>
+        </form>
+
+        <aside class="profile-side-stack">
+
+          <section class="edit-profile-summary-card">
+            <h2>Profile Summary</h2>
+
+            <div class="edit-profile-user">
+              <span class="edit-profile-avatar">👤</span>
+
+              <div>
+                <strong>{{ profile_summary.name }}</strong>
+                <p>{{ profile_summary.role }}</p>
+                <span class="active-member-pill">Active Member</span>
+              </div>
+            </div>
+
+            <div class="edit-profile-facts">
+              <div>
+                <span>Skill Level</span>
+                <strong class="ball-summary">
+                  {% for active in profile_summary.skill.balls %}
+                    {% if active %}
+                      <span class="ball-active">⚽</span>
+                    {% else %}
+                      <span class="ball-inactive">⚽</span>
+                    {% endif %}
+                  {% endfor %}
+                </strong>
+              </div>
+
+              <div>
+                <span>Fitness Level</span>
+                <strong class="ball-summary">
+                  {% for active in profile_summary.fitness.balls %}
+                    {% if active %}
+                      <span class="ball-active">⚽</span>
+                    {% else %}
+                      <span class="ball-inactive">⚽</span>
+                    {% endif %}
+                  {% endfor %}
+                </strong>
+              </div>
+
+              <div>
+                <span>Preferred Position</span>
+                <strong>{{ profile_summary.position }}</strong>
+              </div>
+
+              <div>
+                <span>Experience</span>
+                <strong>{{ profile_summary.experience }}</strong>
+              </div>
+            </div>
+
+            <a class="profile-edit-link" href="{% url 'player_dashboard' %}">
+              View Dashboard →
+            </a>
+          </section>
+
+          <section class="edit-profile-summary-card">
+            <h2>Account</h2>
+
+            <div class="account-facts">
+              <div>
+                <span>Username</span>
+                <strong>{{ profile_summary.username }}</strong>
+              </div>
+
+              <div>
+                <span>Email</span>
+                <strong>{{ profile_summary.email }}</strong>
+              </div>
+
+              <div>
+                <span>Member Since</span>
+                <strong>{{ profile_summary.date_joined|date:"d M Y" }}</strong>
+              </div>
+
+              <div>
+                <span>Total Matches</span>
+                <strong>{{ profile_summary.matches_joined }}</strong>
+              </div>
+
+              <div>
+                <span>Average Rating</span>
+                {% if profile_summary.average_rating %}
+                  <strong>{{ profile_summary.average_rating }} / 5</strong>
+                {% else %}
+                  <strong>No ratings yet</strong>
+                {% endif %}
+              </div>
+            </div>
+          </section>
+
+          <section class="edit-profile-summary-card profile-help-card">
+            <p>
+              Your profile helps Smart Football generate fairer teams using skill,
+              fitness, position preference, and experience.
+            </p>
+          </section>
+
+        </aside>
+
+      </section>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll(".football-rating").forEach((rating) => {
+    const inputId = rating.dataset.inputId;
+    const labelId = rating.dataset.labelId;
+
+    const input = document.getElementById(inputId);
+    const label = document.getElementById(labelId);
+    const buttons = rating.querySelectorAll("button");
+
+    function renderFootballRating() {
+      const currentValue = Number(input.value || 0);
+      const activeCount = currentValue;
+
+      buttons.forEach((button, index) => {
+        if (index < activeCount) {
+          button.classList.add("active");
+        } else {
+          button.classList.remove("active");
+        }
+      });
+
+      if (label) {
+        label.textContent = `Current rating: ${currentValue} / 5`;
+      }
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        input.value = button.dataset.value;
+        renderFootballRating();
+      });
+    });
+
+    renderFootballRating();
+  });
+</script>
+
 {% endblock %}

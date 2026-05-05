@@ -27,10 +27,12 @@
           My Profile
         </a>
 
-        <a class="sidebar-link" href="{% url 'organiser_dashboard' %}">
-          <span>📊</span>
-          Organiser Dashboard
-        </a>
+        {% if is_organiser %}
+          <a class="sidebar-link" href="{% url 'organiser_dashboard' %}">
+            <span>📊</span>
+            Organiser Dashboard
+          </a>
+        {% endif %}
 
         <span class="sidebar-link sidebar-muted">
           <span>💬</span>
@@ -113,7 +115,11 @@
                 </div>
 
                 <div class="session-info">
-                  <h3>{{ item.session.title }}</h3>
+                  <h3>
+                    <a class="session-title-link" href="{% url 'session_detail' item.session.id %}">
+                      {{ item.session.title }}
+                    </a>
+                  </h3>
 
                   <div class="session-meta">
                     <span>🕒 {{ item.session.start_datetime|time:"g:i A" }}</span>
@@ -155,9 +161,16 @@
               <div class="empty-state">
                 <h3>No upcoming sessions yet</h3>
                 <p>Create a session or check back later.</p>
-                <a class="btn btn-secondary btn-small" href="{% url 'session_create' %}">
-                  Create Session
-                </a>
+
+                {% if is_organiser %}
+                  <a class="btn btn-secondary btn-small" href="{% url 'session_create' %}">
+                    Create Session
+                  </a>
+                {% else %}
+                  <a class="btn btn-secondary btn-small" href="{% url 'session_list' %}">
+                    Browse Sessions
+                  </a>
+                {% endif %}
               </div>
             {% endfor %}
           </div>
@@ -215,20 +228,24 @@
                 <strong>›</strong>
               </a>
 
-              <a class="quick-action" href="{% url 'session_create' %}">
-                <span>➕ Create a Session</span>
-                <strong>›</strong>
-              </a>
+              {% if is_organiser %}
+                <a class="quick-action" href="{% url 'session_create' %}">
+                  <span>➕ Create a Session</span>
+                  <strong>›</strong>
+                </a>
+              {% endif %}
 
               <a class="quick-action" href="{% url 'edit_profile' %}">
                 <span>👤 Edit Profile</span>
                 <strong>›</strong>
               </a>
 
-              <a class="quick-action" href="{% url 'organiser_dashboard' %}">
-                <span>📊 Organiser Dashboard</span>
-                <strong>›</strong>
-              </a>
+              {% if is_organiser %}
+                <a class="quick-action" href="{% url 'organiser_dashboard' %}">
+                  <span>📊 Organiser Dashboard</span>
+                  <strong>›</strong>
+                </a>
+              {% endif %}
             </div>
           </div>
         </aside>

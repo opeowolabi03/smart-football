@@ -1,49 +1,56 @@
+from datetime import datetime
+from math import ceil
+
+from django import forms
 from django.contrib import messages
-from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ObjectDoesNotExist
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django import forms
+
 from .forms import RatingForm
 from .models import MatchSession, Participation, Rating, TeamAssignment
-from math import ceil
-from django.core.paginator import Paginator
+
+
+def _is_organiser_user(user):
+    if not user.is_authenticated:
+        return False
+
+    if user.is_staff:
+        return True
+
+    try:
+        return str(user.profile.role).lower() == "organiser"
+    except Exception:
+        return False
+
 
 def player_strength(user):
-    """
-    MVP score: weighted self-assessment + peer rating + reliability.
-    You can tweak weights later without changing DB.
-    """
-    p = getattr(user, "profile", None)
-    if not p:
+    profile = getattr(user, "profile", None)
+
+    if not profile:
         return 0.0
 
-    # skill/fitness are 1..10, overall_rating is 0..5, reliability 0..1-ish
     return (
-        (p.skill_level * 1.0) +
-        (p.fitness_level * 0.7) +
-        (p.overall_rating * 2.0) +
-        (p.reliability_score * 2.0)
+        (getattr(profile, "skill_level", 0) * 1.0)
+        + (getattr(profile, "fitness_level", 0) * 0.7)
+        + (getattr(profile, "overall_rating", 0) * 2.0)
+        + (getattr(profile, "reliability_score", 0) * 2.0)
     )
 
 
-
-class MatchSessionForm(forms.ModelForm):
-    class Meta:
-        model = MatchSession
-        fields = ["title", "start_datetime", "location", "capacity"]
-
-def _stars_from_ten(value):
+def _stars_from_five(value):
     try:
         value = int(value)
     except (TypeError, ValueError):
         value = 0
 
-    filled = ceil(max(0, min(value, 10)) / 2)
-    return "★" * filled + "☆" * (5 - filled)
+    value = max(0, min(value, 5))
+    return "★" * value + "☆" * (5 - value)
 
 
 def _display_choice(obj, field_name, default="Not set"):
@@ -51,6 +58,7 @@ def _display_choice(obj, field_name, default="Not set"):
         return default
 
     display_method = getattr(obj, f"get_{field_name}_display", None)
+
     if callable(display_method):
         return display_method()
 
@@ -75,6 +83,145 @@ def _display_choice(obj, field_name, default="Not set"):
     }
 
     return label_map.get(str(value), str(value).replace("_", " ").title())
+
+
+def _session_format(session):
+    title = session.title.lower()
+
+    if "training" in title:
+        return "Training"
+
+    if "futsal" in title:
+        return "Futsal"
+
+    return "5-a-side"
+
+
+def _session_status(session):
+    if session.start_datetime < timezone.now():
+        return "Completed"
+
+    return "Upcoming"
+
+
+def _profile_score(user):
+    try:
+        profile = user.profile
+    except Exception:
+        return 0
+
+    experience_scores = {
+        "beginner": 1,
+        "intermediate": 2,
+        "advanced": 3,
+    }
+
+    experience_value = experience_scores.get(
+        str(getattr(profile, "experience", "")).lower(),
+        1,
+    )
+
+    return (
+        (getattr(profile, "skill_level", 0) * 2)
+        + getattr(profile, "fitness_level", 0)
+        + experience_value
+    )
+
+
+def _attendance_percentage(count, total):
+    if total <= 0:
+        return 0
+
+    return round((count / total) * 100)
+
+
+class MatchSessionForm(forms.ModelForm):
+    start_date = forms.DateField(
+        label="Date",
+        input_formats=["%Y-%m-%d"],
+        widget=forms.DateInput(
+            format="%Y-%m-%d",
+            attrs={
+                "class": "form-input",
+                "type": "date",
+            },
+        ),
+    )
+
+    start_time = forms.TimeField(
+        label="Start Time",
+        input_formats=["%H:%M"],
+        widget=forms.TimeInput(
+            format="%H:%M",
+            attrs={
+                "class": "form-input",
+                "type": "time",
+            },
+        ),
+    )
+
+    class Meta:
+        model = MatchSession
+        fields = ["title", "location", "capacity"]
+        widgets = {
+            "title": forms.TextInput(attrs={
+                "class": "form-input",
+                "placeholder": "e.g. Friday Night 5-a-side",
+            }),
+            "location": forms.TextInput(attrs={
+                "class": "form-input",
+                "placeholder": "e.g. Sports Hall 1, Astro Pitch, Local Park",
+            }),
+            "capacity": forms.NumberInput(attrs={
+                "class": "form-input",
+                "min": "2",
+                "max": "30",
+                "placeholder": "10",
+            }),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self.instance and self.instance.pk and self.instance.start_datetime:
+            local_datetime = timezone.localtime(self.instance.start_datetime)
+            self.fields["start_date"].initial = local_datetime.date()
+            self.fields["start_time"].initial = local_datetime.strftime("%H:%M")
+
+    def clean_capacity(self):
+        capacity = self.cleaned_data.get("capacity")
+
+        if capacity is None:
+            return capacity
+
+        if capacity < 2:
+            raise forms.ValidationError("Capacity must be at least 2 players.")
+
+        if capacity > 30:
+            raise forms.ValidationError("Capacity cannot be more than 30 players for this prototype.")
+
+        return capacity
+
+    def save(self, commit=True):
+        session = super().save(commit=False)
+
+        start_date = self.cleaned_data["start_date"]
+        start_time = self.cleaned_data["start_time"]
+
+        combined_datetime = datetime.combine(start_date, start_time)
+
+        if timezone.is_naive(combined_datetime):
+            combined_datetime = timezone.make_aware(
+                combined_datetime,
+                timezone.get_current_timezone(),
+            )
+
+        session.start_datetime = combined_datetime
+
+        if commit:
+            session.save()
+
+        return session
 
 
 @login_required
@@ -159,11 +306,13 @@ def player_dashboard(request):
         "role": _display_choice(profile, "role", "Player"),
         "skill_level": getattr(profile, "skill_level", 0) if profile else 0,
         "fitness_level": getattr(profile, "fitness_level", 0) if profile else 0,
-        "skill_stars": _stars_from_ten(getattr(profile, "skill_level", 0) if profile else 0),
-        "fitness_stars": _stars_from_ten(getattr(profile, "fitness_level", 0) if profile else 0),
+        "skill_stars": _stars_from_five(getattr(profile, "skill_level", 0) if profile else 0),
+        "fitness_stars": _stars_from_five(getattr(profile, "fitness_level", 0) if profile else 0),
         "position": _display_choice(profile, "position_preference"),
         "experience": _display_choice(profile, "experience"),
     }
+
+    is_organiser = _is_organiser_user(user)
 
     return render(request, "scheduling/player_dashboard.html", {
         "display_name": display_name,
@@ -175,25 +324,8 @@ def player_dashboard(request):
         "teams_generated": teams_generated,
         "session_cards": session_cards,
         "profile_summary": profile_summary,
+        "is_organiser": is_organiser,
     })
-
-def _session_format(session):
-    title = session.title.lower()
-
-    if "training" in title:
-        return "Training"
-
-    if "futsal" in title:
-        return "Futsal"
-
-    return "5-a-side"
-
-
-def _session_status(session):
-    if session.start_datetime < timezone.now():
-        return "Completed"
-
-    return "Upcoming"
 
 
 def session_list(request):
@@ -231,9 +363,13 @@ def session_list(request):
         session.format_label = _session_format(session)
 
         if session.participant_count > 0:
-            session.attendance_rate = round((session.attended_count / session.participant_count) * 100)
+            session.attendance_rate = round(
+                (session.attended_count / session.participant_count) * 100
+            )
+            session.attendance_style = f"width: {session.attendance_rate}%;"
         else:
             session.attendance_rate = None
+            session.attendance_style = "width: 0%;"
 
         session.is_full = session.participant_count >= session.capacity
 
@@ -273,55 +409,31 @@ def session_list(request):
         "upcoming_count": upcoming_count,
         "completed_count": completed_count,
         "full_count": full_count,
+        "is_organiser": _is_organiser_user(request.user),
     })
+
 
 @login_required
 def session_create(request):
-    if not request.user.is_staff:
-        return HttpResponseForbidden("Only organisers can create sessions.")
+    if not _is_organiser_user(request.user):
+        return HttpResponseForbidden("Only organisers can create match sessions.")
 
     if request.method == "POST":
         form = MatchSessionForm(request.POST)
+
         if form.is_valid():
             session = form.save(commit=False)
             session.created_by = request.user
             session.save()
+
             return redirect("session_detail", session_id=session.id)
     else:
         form = MatchSessionForm()
-    return render(request, "scheduling/session_create.html", {"form": form})
 
-
-from django.shortcuts import get_object_or_404, render
-# make sure TeamAssignment is imported at the top:
-# from .models import MatchSession, Participation, TeamAssignment
-
-def _profile_score(user):
-    try:
-        profile = user.profile
-    except Exception:
-        return 0
-
-    experience_scores = {
-        "beginner": 1,
-        "intermediate": 2,
-        "advanced": 3,
-    }
-
-    experience_value = experience_scores.get(str(getattr(profile, "experience", "")).lower(), 1)
-
-    return (
-        (getattr(profile, "skill_level", 0) * 2)
-        + getattr(profile, "fitness_level", 0)
-        + experience_value
-    )
-
-
-def _attendance_percentage(count, total):
-    if total <= 0:
-        return 0
-
-    return round((count / total) * 100)
+    return render(request, "scheduling/session_create.html", {
+        "form": form,
+        "is_organiser": True,
+    })
 
 
 def session_detail(request, session_id):
@@ -343,7 +455,10 @@ def session_detail(request, session_id):
     if request.user.is_authenticated:
         joined = Participation.objects.filter(session=session, user=request.user).exists()
 
-    is_organiser = request.user.is_authenticated and request.user == session.created_by
+    is_session_organiser = (
+        request.user.is_authenticated
+        and (request.user == session.created_by or request.user.is_staff)
+    )
 
     attended_count = participants.filter(attended=True).count()
     not_marked_count = current_count - attended_count
@@ -428,7 +543,7 @@ def session_detail(request, session_id):
         "is_full": is_full,
         "is_completed": is_completed,
         "status_label": status_label,
-        "is_organiser": is_organiser,
+        "is_organiser": is_session_organiser,
 
         "current_count": current_count,
         "capacity_percentage": capacity_percentage,
@@ -448,16 +563,15 @@ def session_detail(request, session_id):
         "average_session_rating": average_session_rating,
     })
 
+
 @login_required
 def generate_teams(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
 
-    # Only allow POST (button click)
     if request.method != "POST":
         return redirect("session_detail", session_id=session.id)
 
-    # Organiser-only: creator generates teams
-    if request.user != session.created_by:
+    if request.user != session.created_by and not request.user.is_staff:
         return HttpResponseForbidden("Only the organiser can generate teams.")
 
     participants = (
@@ -469,24 +583,18 @@ def generate_teams(request, session_id):
     if participants.count() < 2:
         return redirect("session_detail", session_id=session.id)
 
-    # Build list of (user, score)
     player_scores = []
-    for p in participants:
-        prof = p.user.profile
 
-        # experience_weight() exists in your Profile model
-        exp = prof.experience_weight() if hasattr(prof, "experience_weight") else 1
+    for participation in participants:
+        score = _profile_score(participation.user)
+        player_scores.append((participation.user, score))
 
-        # simple weighted score (easy to explain in demo)
-        score = (prof.skill_level * 2) + prof.fitness_level + exp
-        player_scores.append((p.user, score))
-
-    # Sort best -> worst
     player_scores.sort(key=lambda x: x[1], reverse=True)
 
-    # Greedy balancing
-    team_a, team_b = [], []
-    sum_a, sum_b = 0.0, 0.0
+    team_a = []
+    team_b = []
+    sum_a = 0.0
+    sum_b = 0.0
 
     for user, score in player_scores:
         if sum_a <= sum_b:
@@ -496,36 +604,42 @@ def generate_teams(request, session_id):
             team_b.append(user)
             sum_b += score
 
-    # Save assignments
     with transaction.atomic():
         TeamAssignment.objects.filter(session=session).delete()
 
         for user in team_a:
-            TeamAssignment.objects.create(session=session, user=user, team=TeamAssignment.TEAM_A)
+            TeamAssignment.objects.create(
+                session=session,
+                user=user,
+                team=TeamAssignment.TEAM_A,
+            )
 
         for user in team_b:
-            TeamAssignment.objects.create(session=session, user=user, team=TeamAssignment.TEAM_B)
+            TeamAssignment.objects.create(
+                session=session,
+                user=user,
+                team=TeamAssignment.TEAM_B,
+            )
 
     return redirect("session_detail", session_id=session.id)
+
 
 @login_required
 def view_teams(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
 
-    from .models import TeamAssignment
-
     assignments = (
-        TeamAssignment.objects.filter(session=session)
+        TeamAssignment.objects
+        .filter(session=session)
         .select_related("user", "user__profile")
         .order_by("team", "user__username")
     )
 
-    team1 = [a.user for a in assignments if a.team == 1]
-    team2 = [a.user for a in assignments if a.team == 2]
+    team1 = [assignment.user for assignment in assignments if assignment.team == TeamAssignment.TEAM_A]
+    team2 = [assignment.user for assignment in assignments if assignment.team == TeamAssignment.TEAM_B]
 
-    # show a basic "balance metric"
-    total1 = sum(player_strength(u) for u in team1)
-    total2 = sum(player_strength(u) for u in team2)
+    total1 = sum(player_strength(user) for user in team1)
+    total2 = sum(player_strength(user) for user in team2)
 
     return render(request, "scheduling/view_teams.html", {
         "session": session,
@@ -548,9 +662,17 @@ def join_session(request, session_id):
         if Participation.objects.filter(session=session, user=request.user).exists():
             return redirect("session_detail", session_id=session.id)
 
-        current_count = Participation.objects.select_for_update().filter(session=session).count()
+        current_count = (
+            Participation.objects
+            .select_for_update()
+            .filter(session=session)
+            .count()
+        )
+
         if current_count >= session.capacity:
-            return render(request, "scheduling/session_full.html", {"session": session})
+            return render(request, "scheduling/session_full.html", {
+                "session": session,
+            })
 
         Participation.objects.create(session=session, user=request.user)
 
@@ -565,6 +687,7 @@ def leave_session(request, session_id):
         return redirect("session_detail", session_id=session.id)
 
     Participation.objects.filter(session=session, user=request.user).delete()
+
     return redirect("session_detail", session_id=session.id)
 
 
@@ -575,27 +698,38 @@ def toggle_attendance(request, session_id, participation_id):
     if request.method != "POST":
         return redirect("session_detail", session_id=session.id)
 
-    if request.user != session.created_by:
+    if request.user != session.created_by and not request.user.is_staff:
         return HttpResponseForbidden("Only the organiser can mark attendance.")
 
-    participation = get_object_or_404(Participation, id=participation_id, session=session)
+    participation = get_object_or_404(
+        Participation,
+        id=participation_id,
+        session=session,
+    )
+
     participation.attended = not participation.attended
     participation.save(update_fields=["attended"])
 
-    # Part Z1: update reliability_score for that user (attended / joined)
-    u = participation.user
-    joined = Participation.objects.filter(user=u).count()
-    attended = Participation.objects.filter(user=u, attended=True).count()
+    user = participation.user
+    joined = Participation.objects.filter(user=user).count()
+    attended = Participation.objects.filter(user=user, attended=True).count()
+
     ratio = (attended / joined) if joined else 0.0
 
-    if hasattr(u, "profile"):
-        u.profile.reliability_score = float(ratio)
-        u.profile.save(update_fields=["reliability_score"])
+    profile = getattr(user, "profile", None)
+
+    if profile and hasattr(profile, "reliability_score"):
+        profile.reliability_score = float(ratio)
+        profile.save(update_fields=["reliability_score"])
 
     return redirect("session_detail", session_id=session.id)
 
+
 @login_required
 def organiser_dashboard(request):
+    if not _is_organiser_user(request.user):
+        return HttpResponseForbidden("Only organisers can access this dashboard.")
+
     sessions = (
         MatchSession.objects
         .filter(created_by=request.user)
@@ -606,43 +740,47 @@ def organiser_dashboard(request):
         .order_by("start_datetime")
     )
 
-    labels = [s.start_datetime.strftime("%d %b") for s in sessions]
-    joined_data = [s.participant_count for s in sessions]
-    attended_data = [s.attended_count for s in sessions]
+    labels = [session.start_datetime.strftime("%d %b") for session in sessions]
+    joined_data = [session.participant_count for session in sessions]
+    attended_data = [session.attended_count for session in sessions]
 
     return render(request, "scheduling/organiser_dashboard.html", {
         "sessions": sessions,
         "labels": labels,
         "joined_data": joined_data,
         "attended_data": attended_data,
+        "is_organiser": True,
     })
+
 
 @login_required
 def rate_session(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
 
-    # must have joined
     if not Participation.objects.filter(session=session, user=request.user).exists():
         return HttpResponseForbidden("Join the session before rating.")
 
-    # only after session time (basic rule)
     if timezone.now() < session.start_datetime:
         return HttpResponseForbidden("You can rate after the session time.")
 
     participants = (
-        Participation.objects.filter(session=session)
+        Participation.objects
+        .filter(session=session)
         .select_related("user")
         .order_by("user__username")
     )
 
-    # people you can rate (exclude yourself)
-    ratees = [p.user for p in participants if p.user_id != request.user.id]
+    ratees = [
+        participation.user
+        for participation in participants
+        if participation.user_id != request.user.id
+    ]
 
     if request.method == "POST":
-        # handle multiple forms in one post
-        for u in ratees:
-            prefix = f"user_{u.id}"
+        for user in ratees:
+            prefix = f"user_{user.id}"
             form = RatingForm(request.POST, prefix=prefix)
+
             if form.is_valid():
                 score = form.cleaned_data["score"]
                 comment = form.cleaned_data["comment"]
@@ -650,31 +788,58 @@ def rate_session(request, session_id):
                 Rating.objects.update_or_create(
                     session=session,
                     rater=request.user,
-                    ratee=u,
-                    defaults={"score": score, "comment": comment},
+                    ratee=user,
+                    defaults={
+                        "score": score,
+                        "comment": comment,
+                    },
                 )
 
-        # update overall_rating for each ratee (simple avg of all received ratings)
-        for u in ratees:
-            avg_score = Rating.objects.filter(ratee=u).aggregate(avg=Avg("score"))["avg"] or 0.0
-            if hasattr(u, "profile"):
-                u.profile.overall_rating = float(avg_score)
-                u.profile.save(update_fields=["overall_rating"])
+        for user in ratees:
+            avg_score = (
+                Rating.objects
+                .filter(ratee=user)
+                .aggregate(avg=Avg("score"))["avg"]
+                or 0.0
+            )
+
+            profile = getattr(user, "profile", None)
+
+            if profile and hasattr(profile, "overall_rating"):
+                profile.overall_rating = float(avg_score)
+                profile.save(update_fields=["overall_rating"])
 
         messages.success(request, "Ratings saved.")
+
         return redirect("session_detail", session_id=session.id)
 
-    forms = []
     existing = {
-        r.ratee_id: r for r in Rating.objects.filter(session=session, rater=request.user)
+        rating.ratee_id: rating
+        for rating in Rating.objects.filter(session=session, rater=request.user)
     }
-    for u in ratees:
-        initial = {}
-        if u.id in existing:
-            initial = {"ratee_id": u.id, "score": existing[u.id].score, "comment": existing[u.id].comment}
+
+    forms = []
+
+    for user in ratees:
+        if user.id in existing:
+            initial = {
+                "ratee_id": user.id,
+                "score": existing[user.id].score,
+                "comment": existing[user.id].comment,
+            }
         else:
-            initial = {"ratee_id": u.id, "score": 3, "comment": ""}
+            initial = {
+                "ratee_id": user.id,
+                "score": 3,
+                "comment": "",
+            }
 
-        forms.append((u, RatingForm(prefix=f"user_{u.id}", initial=initial)))
+        forms.append((
+            user,
+            RatingForm(prefix=f"user_{user.id}", initial=initial),
+        ))
 
-    return render(request, "scheduling/rate_session.html", {"session": session, "forms": forms})
+    return render(request, "scheduling/rate_session.html", {
+        "session": session,
+        "forms": forms,
+    })

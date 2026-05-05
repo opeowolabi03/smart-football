@@ -1,9 +1,266 @@
 {% extends "base.html" %}
+
 {% block content %}
-<h2>Create session</h2>
-<form method="post">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit">Create</button>
-</form>
+
+<section class="dashboard-page">
+  <div class="dashboard-layout">
+
+    <aside class="dashboard-sidebar">
+      <div class="sidebar-title">
+        <span>⚽</span>
+        <strong>Smart Football</strong>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="sidebar-link" href="{% url 'player_dashboard' %}">
+          <span>🏠</span>
+          Dashboard
+        </a>
+
+        <a class="sidebar-link" href="{% url 'session_list' %}">
+          <span>📅</span>
+          All Sessions
+        </a>
+
+        <a class="sidebar-link" href="{% url 'edit_profile' %}">
+          <span>👤</span>
+          My Profile
+        </a>
+
+        <a class="sidebar-link active" href="{% url 'organiser_dashboard' %}">
+          <span>📊</span>
+          Organiser Dashboard
+        </a>
+
+        <span class="sidebar-link sidebar-muted">
+          <span>💬</span>
+          Messages
+        </span>
+      </nav>
+    </aside>
+
+    <div class="dashboard-main">
+
+      <div class="create-page-header">
+        <div>
+          <p class="eyebrow">My Sessions › Create Match</p>
+          <h1>Create New Match</h1>
+          <p>Fill in the details below to create a new community football session.</p>
+        </div>
+      </div>
+
+      <section class="create-match-grid">
+
+        <form class="create-match-card" method="post">
+          {% csrf_token %}
+
+          {% if form.non_field_errors %}
+            <div class="form-errors">
+              {{ form.non_field_errors }}
+            </div>
+          {% endif %}
+
+          <div class="create-form-section">
+            <h2>Basic Information</h2>
+
+            <div class="create-form-grid two-cols">
+              <div class="form-group">
+                <label for="{{ form.title.id_for_label }}">Match Title *</label>
+                {{ form.title }}
+
+                {% if form.title.errors %}
+                  <div class="field-errors">{{ form.title.errors }}</div>
+                {% endif %}
+              </div>
+
+              <div class="form-group">
+                <label for="match-format">Match Format</label>
+                <select class="form-input" id="match-format" disabled>
+                  <option>5-a-side</option>
+                </select>
+                <p class="field-hint">Format is fixed for this prototype.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="create-form-section">
+            <h2>Date & Time</h2>
+
+            <div class="create-form-grid two-cols">
+              <div class="form-group">
+                <label for="{{ form.start_date.id_for_label }}">Date *</label>
+                {{ form.start_date }}
+
+                {% if form.start_date.errors %}
+                  <div class="field-errors">{{ form.start_date.errors }}</div>
+                {% endif %}
+              </div>
+
+              <div class="form-group">
+                <label for="{{ form.start_time.id_for_label }}">Start Time *</label>
+                {{ form.start_time }}
+
+                {% if form.start_time.errors %}
+                  <div class="field-errors">{{ form.start_time.errors }}</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="create-form-section">
+            <h2>Location</h2>
+
+            <div class="create-form-grid two-cols">
+              <div class="form-group">
+                <label for="{{ form.location.id_for_label }}">Venue / Location *</label>
+                {{ form.location }}
+
+                {% if form.location.errors %}
+                  <div class="field-errors">{{ form.location.errors }}</div>
+                {% endif %}
+              </div>
+
+              <div class="form-group">
+                <label for="{{ form.capacity.id_for_label }}">Capacity *</label>
+                {{ form.capacity }}
+
+                {% if form.capacity.errors %}
+                  <div class="field-errors">{{ form.capacity.errors }}</div>
+                {% endif %}
+
+                <p class="field-hint">Maximum number of players allowed.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="create-form-section">
+            <h2>Prototype Notes</h2>
+
+            <div class="create-note-box">
+              This version stores the real database fields only: title, date/time, location, and capacity.
+              Description, end time, minimum players, waitlist, and notifications can be added later with migrations.
+            </div>
+          </div>
+
+          <div class="create-form-footer">
+            <a class="btn btn-outline create-cancel-btn" href="{% url 'session_list' %}">
+              Cancel
+            </a>
+
+            <button class="btn btn-secondary create-submit-btn" type="submit">
+              Create Match
+            </button>
+          </div>
+        </form>
+
+        <aside class="create-side-stack">
+
+          <section class="create-side-card guideline-card">
+            <h2>Match Guidelines</h2>
+
+            <p>To ensure a good session for everyone:</p>
+
+            <ul>
+              <li>Be respectful to all players</li>
+              <li>Arrive on time</li>
+              <li>Update attendance after the match</li>
+              <li>Generate balanced teams before the session</li>
+            </ul>
+          </section>
+
+          <section class="create-side-card match-preview-card">
+            <h2>Match Preview</h2>
+
+            <div class="preview-row">
+              <span>📅 Date</span>
+              <strong id="preview-date">Not set</strong>
+            </div>
+
+            <div class="preview-row">
+              <span>🕒 Time</span>
+              <strong id="preview-time">Not set</strong>
+            </div>
+
+            <div class="preview-row">
+              <span>👥 Format</span>
+              <strong>5-a-side</strong>
+            </div>
+
+            <div class="preview-row">
+              <span>🏟 Location</span>
+              <strong id="preview-location">Not set</strong>
+            </div>
+
+            <div class="preview-row">
+              <span>👤 Capacity</span>
+              <strong><span id="preview-capacity">0</span> players</strong>
+            </div>
+          </section>
+
+          <section class="create-side-card create-tip-card">
+            <h2>Tip</h2>
+            <p>
+              Clear match details make it easier for players to decide whether to join.
+              Apparently humans like knowing where they are meant to go.
+            </p>
+          </section>
+
+        </aside>
+
+      </section>
+    </div>
+  </div>
+</section>
+
+<script>
+  const titleInput = document.getElementById("id_title");
+  const dateInput = document.getElementById("id_start_date");
+  const timeInput = document.getElementById("id_start_time");
+  const locationInput = document.getElementById("id_location");
+  const capacityInput = document.getElementById("id_capacity");
+
+  const previewDate = document.getElementById("preview-date");
+  const previewTime = document.getElementById("preview-time");
+  const previewLocation = document.getElementById("preview-location");
+  const previewCapacity = document.getElementById("preview-capacity");
+
+  function formatDate(value) {
+    if (!value) {
+      return "Not set";
+    }
+
+    const date = new Date(value + "T00:00:00");
+
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  }
+
+  function formatTime(value) {
+    if (!value) {
+      return "Not set";
+    }
+
+    return value;
+  }
+
+  function updatePreview() {
+    previewDate.textContent = formatDate(dateInput.value);
+    previewTime.textContent = formatTime(timeInput.value);
+    previewLocation.textContent = locationInput.value || "Not set";
+    previewCapacity.textContent = capacityInput.value || "0";
+  }
+
+  [titleInput, dateInput, timeInput, locationInput, capacityInput].forEach((input) => {
+    if (input) {
+      input.addEventListener("input", updatePreview);
+      input.addEventListener("change", updatePreview);
+    }
+  });
+
+  updatePreview();
+</script>
+
 {% endblock %}
