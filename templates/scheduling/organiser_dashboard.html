@@ -3,6 +3,33 @@
 
 <h2>Organiser dashboard</h2>
 
+<h3>Attendance overview</h3>
+<canvas id="attendanceChart" width="600" height="250"></canvas>
+
+{{ labels|json_script:"chart-labels" }}
+{{ joined_data|json_script:"chart-joined" }}
+{{ attended_data|json_script:"chart-attended" }}
+
+<script>
+  const chartLabels = JSON.parse(document.getElementById("chart-labels").textContent);
+  const joinedSeries = JSON.parse(document.getElementById("chart-joined").textContent);
+  const attendedSeries = JSON.parse(document.getElementById("chart-attended").textContent);
+
+  const ctx = document.getElementById("attendanceChart");
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: chartLabels,
+      datasets: [
+        { label: "Joined", data: joinedSeries },
+        { label: "Attended", data: attendedSeries }
+      ]
+    }
+  });
+</script>
+
+<hr>
+
 {% if sessions %}
   <table border="1" cellpadding="6">
     <tr>
@@ -12,6 +39,7 @@
       <th>Joined</th>
       <th>Attended</th>
     </tr>
+
     {% for s in sessions %}
       <tr>
         <td><a href="{% url 'session_detail' s.id %}">{{ s.title }}</a></td>

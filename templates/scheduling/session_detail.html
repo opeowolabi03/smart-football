@@ -43,7 +43,34 @@
     <button type="submit">Generate teams</button>
   </form>
 
-  <p><a href="{% url 'view_teams' session.id %}">View teams</a></p>
+  <h4>Teams</h4>
+  {% if team_a or team_b %}
+    <div style="display:flex; gap:40px; margin-top:12px;">
+      <div>
+        <h5>Team A</h5>
+        <ul>
+          {% for a in team_a %}
+            <li>{{ a.user.username }}</li>
+          {% empty %}
+            <li>No players</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div>
+        <h5>Team B</h5>
+        <ul>
+          {% for b in team_b %}
+            <li>{{ b.user.username }}</li>
+          {% empty %}
+            <li>No players</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% else %}
+    <p>No teams generated yet.</p>
+  {% endif %}
 
   <hr>
 {% endif %}
@@ -68,4 +95,3 @@
 </ul>
 
 {% endblock %}
-

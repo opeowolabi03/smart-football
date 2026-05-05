@@ -11,7 +11,7 @@ class MatchSession(models.Model):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="created_sessions"
+        related_name="created_sessions",
     )
 
     def __str__(self):
@@ -22,7 +22,7 @@ class Participation(models.Model):
     session = models.ForeignKey(
         MatchSession,
         on_delete=models.CASCADE,
-        related_name="participants"
+        related_name="participants",
     )
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     attended = models.BooleanField(default=False)
@@ -38,22 +38,20 @@ class Rating(models.Model):
     session = models.ForeignKey(
         MatchSession,
         on_delete=models.CASCADE,
-        related_name="ratings"
+        related_name="ratings",
     )
     rater = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="ratings_given"
+        related_name="ratings_given",
     )
     ratee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="ratings_received"
+        related_name="ratings_received",
     )
 
-    score = models.PositiveIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(5)]
-    )
+    score = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -75,7 +73,7 @@ class TeamAssignment(models.Model):
     session = models.ForeignKey(
         MatchSession,
         on_delete=models.CASCADE,
-        related_name="team_assignments"
+        related_name="team_assignments",
     )
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     team = models.CharField(max_length=1, choices=TEAM_CHOICES)

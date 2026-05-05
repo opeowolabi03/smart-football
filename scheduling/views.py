@@ -1,16 +1,14 @@
+from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect, get_object_or_404
+from django.db import transaction
+from django.db.models import Avg, Count, Q
+from django.http import HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django import forms
-from django.db import transaction
-from django.db.models import Count, Q
-from django.http import HttpResponseForbidden
-from django.contrib import messages
-from django.db.models import Avg
-from django.contrib.auth import get_user_model
-from .models import MatchSession, Participation, Rating
 from .forms import RatingForm
-from .models import MatchSession, Participation
+from .models import MatchSession, Participation, Rating, TeamAssignment
 
 def player_strength(user):
     """
@@ -59,6 +57,10 @@ def session_create(request):
     return render(request, "scheduling/session_create.html", {"form": form})
 
 
+from django.shortcuts import get_object_or_404, render
+# make sure TeamAssignment is imported at the top:
+# from .models import MatchSession, Participation, TeamAssignment
+
 def session_detail(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
     participants = Participation.objects.filter(session=session).select_related("user").order_by("user__username")
@@ -70,12 +72,23 @@ def session_detail(request, session_id):
     current_count = Participation.objects.filter(session=session).count()
     is_full = current_count >= session.capacity
 
+    # NEW: fetch saved teams
+    team_a = TeamAssignment.objects.filter(
+        session=session, team=TeamAssignment.TEAM_A
+    ).select_related("user").order_by("user__username")
+
+    team_b = TeamAssignment.objects.filter(
+        session=session, team=TeamAssignment.TEAM_B
+    ).select_related("user").order_by("user__username")
+
     return render(request, "scheduling/session_detail.html", {
         "session": session,
         "participants": participants,
         "joined": joined,
         "is_full": is_full,
         "current_count": current_count,
+        "team_a": team_a,     # NEW
+        "team_b": team_b,     # NEW
         "is_organiser": request.user.is_authenticated and (request.user == session.created_by),
     })
 
@@ -83,47 +96,61 @@ def session_detail(request, session_id):
 def generate_teams(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
 
+    # Only allow POST (button click)
     if request.method != "POST":
         return redirect("session_detail", session_id=session.id)
 
-    # organiser only
+    # Organiser-only: creator generates teams
     if request.user != session.created_by:
         return HttpResponseForbidden("Only the organiser can generate teams.")
 
     participants = (
-        Participation.objects.filter(session=session)
+        Participation.objects
+        .filter(session=session)
         .select_related("user", "user__profile")
-        .order_by("user__username")
     )
 
-    users = [p.user for p in participants]
+    if participants.count() < 2:
+        return redirect("session_detail", session_id=session.id)
 
-    # clear old assignments
-    from .models import TeamAssignment
-    TeamAssignment.objects.filter(session=session).delete()
+    # Build list of (user, score)
+    player_scores = []
+    for p in participants:
+        prof = p.user.profile
 
-    # greedy: sort by strength descending and place into weaker team
-    ranked = sorted(users, key=player_strength, reverse=True)
+        # experience_weight() exists in your Profile model
+        exp = prof.experience_weight() if hasattr(prof, "experience_weight") else 1
 
-    team1, team2 = [], []
-    sum1, sum2 = 0.0, 0.0
+        # simple weighted score (easy to explain in demo)
+        score = (prof.skill_level * 2) + prof.fitness_level + exp
+        player_scores.append((p.user, score))
 
-    for u in ranked:
-        s = player_strength(u)
-        if sum1 <= sum2:
-            team1.append(u)
-            sum1 += s
+    # Sort best -> worst
+    player_scores.sort(key=lambda x: x[1], reverse=True)
+
+    # Greedy balancing
+    team_a, team_b = [], []
+    sum_a, sum_b = 0.0, 0.0
+
+    for user, score in player_scores:
+        if sum_a <= sum_b:
+            team_a.append(user)
+            sum_a += score
         else:
-            team2.append(u)
-            sum2 += s
+            team_b.append(user)
+            sum_b += score
 
-    # store
-    for u in team1:
-        TeamAssignment.objects.create(session=session, user=u, team=1)
-    for u in team2:
-        TeamAssignment.objects.create(session=session, user=u, team=2)
+    # Save assignments
+    with transaction.atomic():
+        TeamAssignment.objects.filter(session=session).delete()
 
-    return redirect("view_teams", session_id=session.id)
+        for user in team_a:
+            TeamAssignment.objects.create(session=session, user=user, team=TeamAssignment.TEAM_A)
+
+        for user in team_b:
+            TeamAssignment.objects.create(session=session, user=user, team=TeamAssignment.TEAM_B)
+
+    return redirect("session_detail", session_id=session.id)
 
 @login_required
 def view_teams(request, session_id):
@@ -220,9 +247,19 @@ def organiser_dashboard(request):
             participant_count=Count("participants"),
             attended_count=Count("participants", filter=Q(participants__attended=True)),
         )
-        .order_by("-start_datetime")
+        .order_by("start_datetime")
     )
-    return render(request, "scheduling/organiser_dashboard.html", {"sessions": sessions})
+
+    labels = [s.start_datetime.strftime("%d %b") for s in sessions]
+    joined_data = [s.participant_count for s in sessions]
+    attended_data = [s.attended_count for s in sessions]
+
+    return render(request, "scheduling/organiser_dashboard.html", {
+        "sessions": sessions,
+        "labels": labels,
+        "joined_data": joined_data,
+        "attended_data": attended_data,
+    })
 
 @login_required
 def rate_session(request, session_id):
