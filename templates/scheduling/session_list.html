@@ -1,17 +1,267 @@
 {% extends "base.html" %}
+
 {% block content %}
-<h2>Upcoming sessions</h2>
 
-<p><a href="/create/">Create a session</a></p>
+<section class="dashboard-page">
+  <div class="dashboard-layout">
 
-<ul>
-  {% for s in sessions %}
-    <li>
-      <a href="/{{ s.id }}/">{{ s.title }}</a>
-      ({{ s.start_datetime }} at {{ s.location }})
-    </li>
-  {% empty %}
-    <li>No sessions yet.</li>
-  {% endfor %}
-</ul>
+    <aside class="dashboard-sidebar">
+      <div class="sidebar-title">
+        <span>⚽</span>
+        <strong>Smart Football</strong>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="sidebar-link" href="{% url 'player_dashboard' %}">
+          <span>🏠</span>
+          Dashboard
+        </a>
+
+        <a class="sidebar-link active" href="{% url 'session_list' %}">
+          <span>📅</span>
+          All Sessions
+        </a>
+
+        <a class="sidebar-link" href="{% url 'edit_profile' %}">
+          <span>👤</span>
+          My Profile
+        </a>
+
+        <a class="sidebar-link" href="{% url 'organiser_dashboard' %}">
+          <span>📊</span>
+          Organiser Dashboard
+        </a>
+
+        <span class="sidebar-link sidebar-muted">
+          <span>💬</span>
+          Messages
+        </span>
+      </nav>
+    </aside>
+
+    <div class="dashboard-main">
+      <div class="sessions-topbar">
+        <div>
+          <p class="eyebrow">All Sessions</p>
+          <h1>All Match Sessions</h1>
+          <p>View, join, and manage available community football sessions.</p>
+        </div>
+
+        <a class="btn btn-primary create-match-btn" href="{% url 'session_create' %}">
+          + Create New Match
+        </a>
+      </div>
+
+      <form class="sessions-filter-card" method="get">
+        <div class="filter-group search-filter">
+          <label for="q">Search</label>
+          <input
+            class="form-input"
+            type="text"
+            id="q"
+            name="q"
+            value="{{ query }}"
+            placeholder="Search sessions..."
+          >
+        </div>
+
+        <div class="filter-group">
+          <label for="status">Status</label>
+          <select class="form-input" id="status" name="status">
+            <option value="all" {% if status_filter == "all" %}selected{% endif %}>All Statuses</option>
+            <option value="upcoming" {% if status_filter == "upcoming" %}selected{% endif %}>Upcoming</option>
+            <option value="completed" {% if status_filter == "completed" %}selected{% endif %}>Completed</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="format">Format</label>
+          <select class="form-input" id="format" name="format">
+            <option value="all" {% if format_filter == "all" %}selected{% endif %}>All Formats</option>
+            <option value="5-a-side" {% if format_filter == "5-a-side" %}selected{% endif %}>5-a-side</option>
+            <option value="training" {% if format_filter == "training" %}selected{% endif %}>Training</option>
+            <option value="futsal" {% if format_filter == "futsal" %}selected{% endif %}>Futsal</option>
+          </select>
+        </div>
+
+        <div class="filter-actions">
+          <button class="btn btn-secondary btn-filter" type="submit">
+            Apply Filters
+          </button>
+
+          <a class="btn btn-outline btn-filter" href="{% url 'session_list' %}">
+            Clear
+          </a>
+        </div>
+      </form>
+
+      <section class="sessions-table-card">
+        <div class="session-tabs">
+          <a class="session-tab active" href="{% url 'session_list' %}">
+            All Sessions <span>{{ total_count }}</span>
+          </a>
+
+          <a class="session-tab" href="?status=upcoming">
+            Upcoming <span>{{ upcoming_count }}</span>
+          </a>
+
+          <a class="session-tab" href="?status=completed">
+            Completed <span>{{ completed_count }}</span>
+          </a>
+
+          <a class="session-tab" href="?status=all">
+            Full <span>{{ full_count }}</span>
+          </a>
+        </div>
+
+        <div class="sessions-table-header">
+          <p>Showing {{ total_count }} session{{ total_count|pluralize }}</p>
+
+          <form method="get" class="sort-form">
+            <input type="hidden" name="q" value="{{ query }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="format" value="{{ format_filter }}">
+
+            <label for="sort">Sort by:</label>
+            <select class="sort-select" id="sort" name="sort" onchange="this.form.submit()">
+              <option value="newest" {% if sort == "newest" %}selected{% endif %}>Date (Newest)</option>
+              <option value="oldest" {% if sort == "oldest" %}selected{% endif %}>Date (Oldest)</option>
+              <option value="title" {% if sort == "title" %}selected{% endif %}>Title</option>
+            </select>
+          </form>
+        </div>
+
+        <div class="sessions-table-wrap">
+          <table class="sessions-table">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Date & Time</th>
+                <th>Location</th>
+                <th>Format</th>
+                <th>Capacity</th>
+                <th>Joined</th>
+                <th>Attendance</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {% for session in sessions %}
+                <tr>
+                  <td>
+                    <div class="table-session-title">
+                      <span class="table-session-icon">📅</span>
+                      <div>
+                        <strong>{{ session.title }}</strong>
+                        <small>
+                          {% if session.created_by %}
+                            Created by {{ session.created_by.username }}
+                          {% else %}
+                            Community session
+                          {% endif %}
+                        </small>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td>
+                    <strong>{{ session.start_datetime|date:"d M Y" }}</strong>
+                    <small>{{ session.start_datetime|time:"g:i A" }}</small>
+                  </td>
+
+                  <td>{{ session.location }}</td>
+
+                  <td>{{ session.format_label }}</td>
+
+                  <td>{{ session.capacity }}</td>
+
+                  <td>{{ session.participant_count }}</td>
+
+                  <td>
+                    {% if session.attendance_rate != None %}
+                      <div class="attendance-mini">
+                        <span>{{ session.attendance_rate }}%</span>
+                        <div class="attendance-bar">
+                          <div style="width: {{ session.attendance_rate }}%;"></div>
+                        </div>
+                      </div>
+                    {% else %}
+                      <span class="muted-dash">-</span>
+                    {% endif %}
+                  </td>
+
+                  <td>
+                    {% if session.is_full %}
+                      <span class="status-badge status-full">Full</span>
+                    {% elif session.status_label == "Upcoming" %}
+                      <span class="status-badge status-upcoming">Upcoming</span>
+                    {% else %}
+                      <span class="status-badge status-completed">Completed</span>
+                    {% endif %}
+                  </td>
+
+                  <td>
+                    <div class="table-actions">
+                      <a class="icon-action" href="{% url 'session_detail' session.id %}" title="View details">
+                        👁
+                      </a>
+
+                      {% if user.is_authenticated %}
+                        {% if session.user_joined %}
+                          <span class="joined-mini">Joined</span>
+                        {% elif session.is_full %}
+                          <span class="full-mini">Full</span>
+                        {% else %}
+                          <form method="post" action="{% url 'join_session' session.id %}">
+                            {% csrf_token %}
+                            <button class="join-mini" type="submit">Join</button>
+                          </form>
+                        {% endif %}
+                      {% else %}
+                        <a class="join-mini" href="{% url 'login' %}">Login</a>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="9">
+                    <div class="empty-state">
+                      <h3>No sessions found</h3>
+                      <p>Try changing your search or filters.</p>
+                      <a class="btn btn-secondary btn-small" href="{% url 'session_create' %}">
+                        Create Session
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination-row">
+          <p>
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+          </p>
+
+          <div class="pagination-controls">
+            {% if page_obj.has_previous %}
+              <a href="?page={{ page_obj.previous_page_number }}&q={{ query }}&status={{ status_filter }}&format={{ format_filter }}&sort={{ sort }}">‹</a>
+            {% endif %}
+
+            <span>{{ page_obj.number }}</span>
+
+            {% if page_obj.has_next %}
+              <a href="?page={{ page_obj.next_page_number }}&q={{ query }}&status={{ status_filter }}&format={{ format_filter }}&sort={{ sort }}">›</a>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
 {% endblock %}

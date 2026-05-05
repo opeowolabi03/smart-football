@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="dashboard-page">
+  <div class="dashboard-layout">
+
+    <aside class="dashboard-sidebar">
+      <div class="sidebar-title">
+        <span>⚽</span>
+        <strong>Smart Football</strong>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="sidebar-link active" href="{% url 'player_dashboard' %}">
+          <span>🏠</span>
+          Dashboard
+        </a>
+
+        <a class="sidebar-link" href="{% url 'session_list' %}">
+          <span>📅</span>
+          All Sessions
+        </a>
+
+        <a class="sidebar-link" href="{% url 'edit_profile' %}">
+          <span>👤</span>
+          My Profile
+        </a>
+
+        <a class="sidebar-link" href="{% url 'organiser_dashboard' %}">
+          <span>📊</span>
+          Organiser Dashboard
+        </a>
+
+        <span class="sidebar-link sidebar-muted">
+          <span>💬</span>
+          Messages
+        </span>
+      </nav>
+    </aside>
+
+    <div class="dashboard-main">
+      <div class="dashboard-topline">
+        <div>
+          <h1>Welcome back, {{ display_name }}!</h1>
+          <p>Here’s what’s happening with your matches.</p>
+        </div>
+
+        <div class="dashboard-user-pill">
+          <span class="avatar-circle">👤</span>
+          <strong>{{ display_name }}</strong>
+        </div>
+      </div>
+
+      <section class="stats-grid">
+        <article class="stat-card">
+          <span class="stat-icon">📅</span>
+          <div>
+            <p>Matches Joined</p>
+            <strong>{{ matches_joined }}</strong>
+            <small>Total sessions</small>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-icon">✅</span>
+          <div>
+            <p>Attendance Rate</p>
+            <strong>{{ attendance_rate }}%</strong>
+            <small>{{ attended_count }} / {{ matches_joined }} attended</small>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-icon">⭐</span>
+          <div>
+            <p>Average Rating</p>
+
+            {% if average_rating %}
+              <strong>{{ average_rating }} / 5</strong>
+              <small>Based on {{ rating_count }} ratings</small>
+            {% else %}
+              <strong>N/A</strong>
+              <small>No ratings yet</small>
+            {% endif %}
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-icon">👥</span>
+          <div>
+            <p>Teams Generated</p>
+            <strong>{{ teams_generated }}</strong>
+            <small>By Smart Football</small>
+          </div>
+        </article>
+      </section>
+
+      <section class="dashboard-content-grid">
+        <div class="dashboard-card upcoming-card">
+          <div class="card-heading">
+            <h2>Upcoming Sessions</h2>
+            <a href="{% url 'session_list' %}">View all</a>
+          </div>
+
+          <div class="session-list">
+            {% for item in session_cards %}
+              <article class="session-card">
+                <div class="session-date">
+                  <span>{{ item.session.start_datetime|date:"D" }}</span>
+                  <strong>{{ item.session.start_datetime|date:"d" }}</strong>
+                  <span>{{ item.session.start_datetime|date:"M" }}</span>
+                </div>
+
+                <div class="session-info">
+                  <h3>{{ item.session.title }}</h3>
+
+                  <div class="session-meta">
+                    <span>🕒 {{ item.session.start_datetime|time:"g:i A" }}</span>
+                    <span>📍 {{ item.session.location }}</span>
+                    <span>👥 {{ item.session.participant_count }} / {{ item.session.capacity }} joined</span>
+                  </div>
+
+                  {% if item.team %}
+                    <p class="team-note">Assigned to Team {{ item.team }}</p>
+                  {% endif %}
+                </div>
+
+                <div class="session-actions">
+                  {% if item.is_joined %}
+                    <span class="session-pill session-pill-success">Joined</span>
+                    <a class="btn btn-outline btn-small" href="{% url 'session_detail' item.session.id %}">
+                      View Details
+                    </a>
+                  {% else %}
+                    {% if item.is_full %}
+                      <span class="session-pill session-pill-error">Full</span>
+                      <a class="btn btn-outline btn-small" href="{% url 'session_detail' item.session.id %}">
+                        View Details
+                      </a>
+                    {% else %}
+                      <span class="session-pill">Not Joined</span>
+
+                      <form method="post" action="{% url 'join_session' item.session.id %}">
+                        {% csrf_token %}
+                        <button class="btn btn-secondary btn-small" type="submit">
+                          Join Session
+                        </button>
+                      </form>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </article>
+            {% empty %}
+              <div class="empty-state">
+                <h3>No upcoming sessions yet</h3>
+                <p>Create a session or check back later.</p>
+                <a class="btn btn-secondary btn-small" href="{% url 'session_create' %}">
+                  Create Session
+                </a>
+              </div>
+            {% endfor %}
+          </div>
+
+          <div class="view-all-row">
+            <a href="{% url 'session_list' %}">View all sessions →</a>
+          </div>
+        </div>
+
+        <aside class="dashboard-side-stack">
+          <div class="dashboard-card profile-card">
+            <h2>Profile Summary</h2>
+
+            <div class="profile-summary-header">
+              <span class="profile-avatar">👤</span>
+              <div>
+                <strong>{{ profile_summary.name }}</strong>
+                <p>{{ profile_summary.role }}</p>
+              </div>
+            </div>
+
+            <div class="profile-facts">
+              <div>
+                <span>Skill Level</span>
+                <strong>{{ profile_summary.skill_stars }}</strong>
+              </div>
+
+              <div>
+                <span>Fitness Level</span>
+                <strong>{{ profile_summary.fitness_stars }}</strong>
+              </div>
+
+              <div>
+                <span>Preferred Position</span>
+                <strong>{{ profile_summary.position }}</strong>
+              </div>
+
+              <div>
+                <span>Experience</span>
+                <strong>{{ profile_summary.experience }}</strong>
+              </div>
+            </div>
+
+            <a class="profile-edit-link" href="{% url 'edit_profile' %}">
+              Edit Profile →
+            </a>
+          </div>
+
+          <div class="dashboard-card quick-actions-card">
+            <h2>Quick Actions</h2>
+
+            <div class="quick-actions">
+              <a class="quick-action" href="{% url 'session_list' %}">
+                <span>📅 Browse All Sessions</span>
+                <strong>›</strong>
+              </a>
+
+              <a class="quick-action" href="{% url 'session_create' %}">
+                <span>➕ Create a Session</span>
+                <strong>›</strong>
+              </a>
+
+              <a class="quick-action" href="{% url 'edit_profile' %}">
+                <span>👤 Edit Profile</span>
+                <strong>›</strong>
+              </a>
+
+              <a class="quick-action" href="{% url 'organiser_dashboard' %}">
+                <span>📊 Organiser Dashboard</span>
+                <strong>›</strong>
+              </a>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

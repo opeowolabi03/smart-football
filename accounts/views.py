@@ -22,7 +22,7 @@ def auth_page(request, mode="login"):
                 if not request.POST.get("remember_me"):
                     request.session.set_expiry(0)
 
-                return redirect("session_list")
+                return redirect("player_dashboard")
 
         elif "signup_submit" in request.POST:
             active_panel = "signup"

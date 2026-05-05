@@ -9,6 +9,8 @@ from django.utils import timezone
 from django import forms
 from .forms import RatingForm
 from .models import MatchSession, Participation, Rating, TeamAssignment
+from math import ceil
+from django.core.paginator import Paginator
 
 def player_strength(user):
     """
@@ -34,11 +36,244 @@ class MatchSessionForm(forms.ModelForm):
         model = MatchSession
         fields = ["title", "start_datetime", "location", "capacity"]
 
+def _stars_from_ten(value):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = 0
+
+    filled = ceil(max(0, min(value, 10)) / 2)
+    return "★" * filled + "☆" * (5 - filled)
+
+
+def _display_choice(obj, field_name, default="Not set"):
+    if obj is None:
+        return default
+
+    display_method = getattr(obj, f"get_{field_name}_display", None)
+    if callable(display_method):
+        return display_method()
+
+    value = getattr(obj, field_name, default)
+
+    label_map = {
+        "any": "Any",
+        "ANY": "Any",
+        "GK": "Goalkeeper",
+        "gk": "Goalkeeper",
+        "DEF": "Defender",
+        "def": "Defender",
+        "MID": "Midfielder",
+        "mid": "Midfielder",
+        "FWD": "Forward",
+        "fwd": "Forward",
+        "beginner": "Beginner",
+        "intermediate": "Intermediate",
+        "advanced": "Advanced",
+        "player": "Player",
+        "organiser": "Organiser",
+    }
+
+    return label_map.get(str(value), str(value).replace("_", " ").title())
+
+
+@login_required
+def player_dashboard(request):
+    user = request.user
+
+    try:
+        profile = user.profile
+    except ObjectDoesNotExist:
+        profile = None
+
+    display_name = user.get_full_name().strip() or user.username
+
+    participations = Participation.objects.filter(user=user).select_related("session")
+    matches_joined = participations.count()
+    attended_count = participations.filter(attended=True).count()
+
+    if matches_joined > 0:
+        attendance_rate = round((attended_count / matches_joined) * 100)
+    else:
+        attendance_rate = 0
+
+    rating_stats = Rating.objects.filter(ratee=user).aggregate(
+        average_rating=Avg("score"),
+        rating_count=Count("id"),
+    )
+
+    average_rating = rating_stats["average_rating"]
+    rating_count = rating_stats["rating_count"]
+
+    if average_rating is not None:
+        average_rating = round(average_rating, 1)
+
+    teams_generated = (
+        TeamAssignment.objects
+        .filter(user=user)
+        .values("session")
+        .distinct()
+        .count()
+    )
+
+    upcoming_sessions = list(
+        MatchSession.objects
+        .filter(start_datetime__gte=timezone.now())
+        .annotate(participant_count=Count("participants"))
+        .order_by("start_datetime")[:4]
+    )
+
+    user_participations = Participation.objects.filter(
+        user=user,
+        session__in=upcoming_sessions,
+    )
+
+    joined_session_ids = {
+        participation.session_id
+        for participation in user_participations
+    }
+
+    team_assignments = TeamAssignment.objects.filter(
+        user=user,
+        session__in=upcoming_sessions,
+    )
+
+    team_map = {
+        assignment.session_id: assignment.team
+        for assignment in team_assignments
+    }
+
+    session_cards = []
+
+    for session in upcoming_sessions:
+        session_cards.append({
+            "session": session,
+            "is_joined": session.id in joined_session_ids,
+            "team": team_map.get(session.id),
+            "is_full": session.participant_count >= session.capacity,
+            "spaces_left": max(session.capacity - session.participant_count, 0),
+        })
+
+    profile_summary = {
+        "name": display_name,
+        "role": _display_choice(profile, "role", "Player"),
+        "skill_level": getattr(profile, "skill_level", 0) if profile else 0,
+        "fitness_level": getattr(profile, "fitness_level", 0) if profile else 0,
+        "skill_stars": _stars_from_ten(getattr(profile, "skill_level", 0) if profile else 0),
+        "fitness_stars": _stars_from_ten(getattr(profile, "fitness_level", 0) if profile else 0),
+        "position": _display_choice(profile, "position_preference"),
+        "experience": _display_choice(profile, "experience"),
+    }
+
+    return render(request, "scheduling/player_dashboard.html", {
+        "display_name": display_name,
+        "matches_joined": matches_joined,
+        "attended_count": attended_count,
+        "attendance_rate": attendance_rate,
+        "average_rating": average_rating,
+        "rating_count": rating_count,
+        "teams_generated": teams_generated,
+        "session_cards": session_cards,
+        "profile_summary": profile_summary,
+    })
+
+def _session_format(session):
+    title = session.title.lower()
+
+    if "training" in title:
+        return "Training"
+
+    if "futsal" in title:
+        return "Futsal"
+
+    return "5-a-side"
+
+
+def _session_status(session):
+    if session.start_datetime < timezone.now():
+        return "Completed"
+
+    return "Upcoming"
+
 
 def session_list(request):
-    sessions = MatchSession.objects.all().order_by("start_datetime")
-    return render(request, "scheduling/session_list.html", {"sessions": sessions})
+    query = request.GET.get("q", "").strip()
+    status_filter = request.GET.get("status", "all")
+    format_filter = request.GET.get("format", "all")
+    sort = request.GET.get("sort", "newest")
 
+    sessions = (
+        MatchSession.objects
+        .all()
+        .annotate(
+            participant_count=Count("participants"),
+            attended_count=Count("participants", filter=Q(participants__attended=True)),
+        )
+    )
+
+    if query:
+        sessions = sessions.filter(
+            Q(title__icontains=query) |
+            Q(location__icontains=query)
+        )
+
+    if sort == "oldest":
+        sessions = sessions.order_by("start_datetime")
+    elif sort == "title":
+        sessions = sessions.order_by("title")
+    else:
+        sessions = sessions.order_by("-start_datetime")
+
+    session_rows = []
+
+    for session in sessions:
+        session.status_label = _session_status(session)
+        session.format_label = _session_format(session)
+
+        if session.participant_count > 0:
+            session.attendance_rate = round((session.attended_count / session.participant_count) * 100)
+        else:
+            session.attendance_rate = None
+
+        session.is_full = session.participant_count >= session.capacity
+
+        if request.user.is_authenticated:
+            session.user_joined = Participation.objects.filter(
+                session=session,
+                user=request.user,
+            ).exists()
+        else:
+            session.user_joined = False
+
+        if status_filter != "all" and session.status_label.lower() != status_filter:
+            continue
+
+        if format_filter != "all" and session.format_label.lower() != format_filter:
+            continue
+
+        session_rows.append(session)
+
+    total_count = len(session_rows)
+    upcoming_count = sum(1 for session in session_rows if session.status_label == "Upcoming")
+    completed_count = sum(1 for session in session_rows if session.status_label == "Completed")
+    full_count = sum(1 for session in session_rows if session.is_full)
+
+    paginator = Paginator(session_rows, 8)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    return render(request, "scheduling/session_list.html", {
+        "page_obj": page_obj,
+        "sessions": page_obj.object_list,
+        "query": query,
+        "status_filter": status_filter,
+        "format_filter": format_filter,
+        "sort": sort,
+        "total_count": total_count,
+        "upcoming_count": upcoming_count,
+        "completed_count": completed_count,
+        "full_count": full_count,
+    })
 
 @login_required
 def session_create(request):
