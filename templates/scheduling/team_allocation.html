@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="dashboard-page team-allocation-page">
+  <div class="dashboard-layout">
+
+    {% include "includes/sidebar.html" with active_page="team_allocation" %}
+
+    <div class="dashboard-main">
+
+      <div class="allocation-topbar">
+        <div>
+          <div class="match-breadcrumb allocation-breadcrumb">
+            <a href="{% url 'organiser_dashboard' %}">Organiser Dashboard</a>
+            <span>›</span>
+            <a href="{% url 'session_detail' session.id %}">{{ session.title }}</a>
+            <span>›</span>
+            <strong>Team Allocation</strong>
+          </div>
+
+          <h1>Team Allocation / Fairness</h1>
+          <p>Automatically generate balanced teams using player data and a fairness algorithm.</p>
+        </div>
+
+        <div class="allocation-header-actions">
+          <a class="btn btn-outline allocation-header-btn" href="{% url 'session_detail' session.id %}">
+            Allocation History
+          </a>
+
+          <form method="post" action="{% url 'generate_teams' session.id %}">
+            {% csrf_token %}
+            <button class="btn btn-secondary allocation-header-btn" type="submit">
+              Generate Teams
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {% if messages %}
+        <div class="allocation-messages">
+          {% for message in messages %}
+            <div class="allocation-message allocation-message-{{ message.tags }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <section class="allocation-match-card">
+        <div class="allocation-date-card">
+          <span>{{ session.start_datetime|date:"D" }}</span>
+          <strong>{{ session.start_datetime|date:"d" }}</strong>
+          <span>{{ session.start_datetime|date:"M" }}</span>
+        </div>
+
+        <div class="allocation-match-info">
+          <h2>{{ session.title }}</h2>
+
+          <div class="allocation-meta">
+            <span>🕒 {{ session.start_datetime|time:"g:i A" }}</span>
+            <span>📍 {{ session.location }}</span>
+            <span>👥 {{ current_count }} / {{ session.capacity }} joined</span>
+          </div>
+
+          {% if is_ready %}
+            <span class="allocation-ready-pill">Ready for team allocation</span>
+          {% else %}
+            <span class="allocation-warning-pill">Need at least 2 players</span>
+          {% endif %}
+
+          <p>Teams are generated automatically based on skill, position, fitness, rating, and experience.</p>
+        </div>
+
+        <div class="allocation-summary-box">
+          <span>Format</span>
+          <strong>5-a-side</strong>
+        </div>
+
+        <div class="allocation-summary-box">
+          <span>Players</span>
+          <strong>{{ current_count }}</strong>
+        </div>
+
+        <div class="allocation-summary-box">
+          <span>Team Size</span>
+          <strong>{{ team_size }} per team</strong>
+        </div>
+
+        <div class="allocation-summary-box">
+          <span>Allocation Mode</span>
+          <strong class="balanced-text">Balanced</strong>
+        </div>
+      </section>
+
+      <section class="allocation-grid">
+
+        <div class="allocation-left">
+
+          <section class="allocation-card">
+            <div class="allocation-card-heading">
+              <h2>Proposed Team Allocation</h2>
+
+              {% if has_allocation %}
+                <span class="fairness-pill">Fairness Score: {{ fairness_score }}%</span>
+              {% else %}
+                <span class="fairness-pill neutral">No allocation yet</span>
+              {% endif %}
+            </div>
+
+            {% if has_allocation %}
+              <div class="allocation-teams-grid">
+
+                <div class="allocation-team-card team-a-card">
+                  <div class="allocation-team-heading">
+                    <h3>Team A</h3>
+                    <p>Avg Rating: {{ team_a_average }}</p>
+                  </div>
+
+                  <table class="allocation-team-table">
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Position</th>
+                        <th>Rating</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {% for row in team_a_rows %}
+                        <tr>
+                          <td>
+                            <span class="mini-avatar">👤</span>
+                            {{ row.username }}
+                          </td>
+                          <td>{{ row.position }}</td>
+                          <td><span class="score-badge">{{ row.score }}</span></td>
+                        </tr>
+                      {% empty %}
+                        <tr>
+                          <td colspan="3">No players assigned.</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+
+                    <tfoot>
+                      <tr>
+                        <td colspan="2">Total Rating</td>
+                        <td>{{ team_a_total }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <div class="allocation-team-card team-b-card">
+                  <div class="allocation-team-heading">
+                    <h3>Team B</h3>
+                    <p>Avg Rating: {{ team_b_average }}</p>
+                  </div>
+
+                  <table class="allocation-team-table">
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Position</th>
+                        <th>Rating</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {% for row in team_b_rows %}
+                        <tr>
+                          <td>
+                            <span class="mini-avatar">👤</span>
+                            {{ row.username }}
+
+                            {% if row.user == user %}
+                              <span class="you-pill">You</span>
+                            {% endif %}
+                          </td>
+                          <td>{{ row.position }}</td>
+                          <td><span class="score-badge">{{ row.score }}</span></td>
+                        </tr>
+                      {% empty %}
+                        <tr>
+                          <td colspan="3">No players assigned.</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+
+                    <tfoot>
+                      <tr>
+                        <td colspan="2">Total Rating</td>
+                        <td>{{ team_b_total }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+              </div>
+
+              <div class="allocation-info-note">
+                Teams are balanced based on player rating, preferred position, fitness level, peer rating, and experience.
+              </div>
+            {% else %}
+              <div class="empty-state">
+                <h3>No teams generated yet</h3>
+                <p>Click Generate Teams to create a proposed allocation for this match.</p>
+
+                <form method="post" action="{% url 'generate_teams' session.id %}">
+                  {% csrf_token %}
+                  <button class="btn btn-secondary btn-small" type="submit">
+                    Generate Teams
+                  </button>
+                </form>
+              </div>
+            {% endif %}
+          </section>
+
+          <section class="allocation-card unallocated-card">
+            <h2>Unallocated / Waiting List ({{ unallocated_rows|length }})</h2>
+
+            {% if unallocated_rows %}
+              <div class="unallocated-list">
+                {% for row in unallocated_rows %}
+                  <div class="unallocated-player">
+                    <span class="mini-avatar">👤</span>
+                    <strong>{{ row.username }}</strong>
+                    <small>{{ row.position }} · Rating {{ row.score }}</small>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="unallocated-empty">
+                <span>👥</span>
+                <div>
+                  <strong>All players have been allocated.</strong>
+                  <p>No one is left waiting.</p>
+                </div>
+              </div>
+            {% endif %}
+          </section>
+
+          <div class="allocation-footer-actions">
+            <form method="post" action="{% url 'cancel_team_allocation' session.id %}">
+              {% csrf_token %}
+              <button class="btn btn-danger allocation-action-btn" type="submit">
+                Cancel Allocation
+              </button>
+            </form>
+
+            <form method="post" action="{% url 'generate_teams' session.id %}">
+              {% csrf_token %}
+              <button class="btn btn-outline allocation-action-btn" type="submit">
+                Regenerate Teams
+              </button>
+            </form>
+
+            <form method="post" action="{% url 'confirm_team_allocation' session.id %}">
+              {% csrf_token %}
+              <button class="btn btn-secondary allocation-action-btn" type="submit">
+                Confirm Teams
+              </button>
+            </form>
+          </div>
+
+        </div>
+
+        <aside class="allocation-right">
+
+          <section class="allocation-card">
+            <h2>Fairness Breakdown</h2>
+
+            {% if has_allocation %}
+              <div class="fairness-chart-wrap">
+                <canvas id="fairnessRadar"></canvas>
+              </div>
+
+              {{ radar_labels|json_script:"radar-labels" }}
+              {{ team_a_radar|json_script:"team-a-radar" }}
+              {{ team_b_radar|json_script:"team-b-radar" }}
+
+              <div class="fairness-score-row">
+                <p>The fairness score indicates how evenly matched the teams are.</p>
+                <span>{{ fairness_score }}% {{ fairness_label }}</span>
+              </div>
+            {% else %}
+              <div class="empty-state compact">
+                <h3>No chart yet</h3>
+                <p>Generate teams to view the fairness breakdown.</p>
+              </div>
+            {% endif %}
+          </section>
+
+          <section class="allocation-card">
+            <h2>Allocation Settings</h2>
+
+            <div class="settings-list">
+              <div>
+                <span>Balance By</span>
+                <strong>Skill, Position, Fitness, Rating</strong>
+              </div>
+
+              <div>
+                <span>Respect Preferences</span>
+                <strong>Yes</strong>
+              </div>
+
+              <div>
+                <span>Allow Position Flexibility</span>
+                <strong>Yes</strong>
+              </div>
+
+              <div>
+                <span>Consider Past Teams</span>
+                <strong>Prototype</strong>
+              </div>
+            </div>
+
+            <a class="btn btn-outline settings-btn" href="{% url 'session_detail' session.id %}">
+              Edit Settings
+            </a>
+          </section>
+
+        </aside>
+
+      </section>
+    </div>
+  </div>
+</section>
+
+{% if has_allocation %}
+<script>
+  const radarLabels = JSON.parse(document.getElementById("radar-labels").textContent);
+  const teamAData = JSON.parse(document.getElementById("team-a-radar").textContent);
+  const teamBData = JSON.parse(document.getElementById("team-b-radar").textContent);
+
+  const radarCanvas = document.getElementById("fairnessRadar");
+
+  new Chart(radarCanvas, {
+    type: "radar",
+    data: {
+      labels: radarLabels,
+      datasets: [
+        {
+          label: "Team A",
+          data: teamAData,
+          borderColor: "#0B6E4F",
+          backgroundColor: "rgba(11, 110, 79, 0.12)",
+          pointBackgroundColor: "#0B6E4F"
+        },
+        {
+          label: "Team B",
+          data: teamBData,
+          borderColor: "#2563EB",
+          backgroundColor: "rgba(37, 99, 235, 0.12)",
+          pointBackgroundColor: "#2563EB"
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          suggestedMin: 0,
+          suggestedMax: 100,
+          ticks: {
+            stepSize: 25
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          position: "top"
+        }
+      }
+    }
+  });
+</script>
+{% endif %}
+
+{% endblock %}

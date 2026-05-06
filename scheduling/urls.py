@@ -11,8 +11,11 @@ urlpatterns = [
     path("<int:session_id>/join/", views.join_session, name="join_session"),
     path("<int:session_id>/leave/", views.leave_session, name="leave_session"),
     path("<int:session_id>/toggle-attendance/<int:participation_id>/", views.toggle_attendance, name="toggle_attendance"),
-    path("<int:session_id>/rate/", views.rate_session, name="rate_session"),
-    path("<int:session_id>/teams/", views.view_teams, name="view_teams"),
-    path("<int:session_id>/generate-teams/", views.generate_teams, name="generate_teams"),
 
+    path("<int:session_id>/team-allocation/", views.team_allocation, name="team_allocation"),
+    path("<int:session_id>/generate-teams/", views.generate_teams, name="generate_teams"),
+    path("<int:session_id>/cancel-allocation/", views.cancel_team_allocation, name="cancel_team_allocation"),
+    path("<int:session_id>/confirm-allocation/", views.confirm_team_allocation, name="confirm_team_allocation"),
+
+    path("<int:session_id>/rate/", views.rate_session, name="rate_session"),
 ]

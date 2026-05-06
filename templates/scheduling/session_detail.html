@@ -5,7 +5,7 @@
 <section class="dashboard-page">
   <div class="dashboard-layout">
 
-    {% include "includes/sidebar.html" with active_page="sessions" %}
+    {% include "includes/sidebar.html" with active_page="sessions" sidebar_session_id=session.id %}
 
     <div class="dashboard-main">
 
@@ -14,6 +14,16 @@
         <span>›</span>
         <strong>{{ session.title }}</strong>
       </div>
+
+      {% if messages %}
+        <div class="allocation-messages">
+          {% for message in messages %}
+            <div class="allocation-message allocation-message-{{ message.tags }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
 
       <section class="match-hero-card">
         <div class="match-date-box">
@@ -73,6 +83,12 @@
             {% endif %}
           {% else %}
             <a class="btn btn-primary" href="{% url 'login' %}">Login to Join</a>
+          {% endif %}
+
+          {% if is_organiser %}
+            <a class="btn btn-secondary" href="{% url 'team_allocation' session.id %}">
+              Team Allocation
+            </a>
           {% endif %}
 
           <a class="btn btn-outline" href="{% url 'session_list' %}">Back to Sessions</a>
@@ -153,7 +169,11 @@
                     </tr>
                   {% empty %}
                     <tr>
-                      <td colspan="4">No participants have joined yet.</td>
+                      {% if is_organiser %}
+                        <td colspan="4">No participants have joined yet.</td>
+                      {% else %}
+                        <td colspan="3">No participants have joined yet.</td>
+                      {% endif %}
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -198,12 +218,9 @@
               <h2>Generated Teams</h2>
 
               {% if is_organiser %}
-                <form method="post" action="{% url 'generate_teams' session.id %}">
-                  {% csrf_token %}
-                  <button class="mini-outline-btn" type="submit">
-                    Regenerate Teams
-                  </button>
-                </form>
+                <a class="mini-outline-btn team-allocation-mini-link" href="{% url 'team_allocation' session.id %}">
+                  Team Allocation
+                </a>
               {% endif %}
             </div>
 
@@ -266,11 +283,15 @@
             {% endif %}
 
             <div class="team-info-note">
-              Teams are generated using player skill level, fitness, and experience to support fairer allocation.
+              Teams are generated using player skill level, fitness, rating, and experience to support fairer allocation.
             </div>
 
             <div class="team-actions-row">
               {% if is_organiser %}
+                <a class="btn btn-secondary btn-small" href="{% url 'team_allocation' session.id %}">
+                  Team Allocation
+                </a>
+
                 <form method="post" action="{% url 'generate_teams' session.id %}">
                   {% csrf_token %}
                   <button class="btn btn-outline btn-small" type="submit">

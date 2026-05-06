@@ -563,46 +563,231 @@ def session_detail(request, session_id):
         "average_session_rating": average_session_rating,
     })
 
+def _is_organiser_user(user):
+    if not user.is_authenticated:
+        return False
 
-@login_required
-def generate_teams(request, session_id):
-    session = get_object_or_404(MatchSession, id=session_id)
+    if user.is_staff:
+        return True
 
-    if request.method != "POST":
-        return redirect("session_detail", session_id=session.id)
+    try:
+        return str(user.profile.role).lower() == "organiser"
+    except Exception:
+        return False
 
-    if request.user != session.created_by and not request.user.is_staff:
-        return HttpResponseForbidden("Only the organiser can generate teams.")
 
+def _choice_label(obj, field_name, default="Not set"):
+    if obj is None:
+        return default
+
+    display_method = getattr(obj, f"get_{field_name}_display", None)
+
+    if callable(display_method):
+        return display_method()
+
+    value = getattr(obj, field_name, default)
+
+    label_map = {
+        "ANY": "Any",
+        "any": "Any",
+        "GK": "Goalkeeper",
+        "gk": "Goalkeeper",
+        "DEF": "Defender",
+        "def": "Defender",
+        "MID": "Midfielder",
+        "mid": "Midfielder",
+        "FWD": "Forward",
+        "fwd": "Forward",
+        "beginner": "Beginner",
+        "intermediate": "Intermediate",
+        "advanced": "Advanced",
+    }
+
+    return label_map.get(str(value), str(value).replace("_", " ").title())
+
+
+def _experience_score(profile):
+    if not profile:
+        return 1
+
+    if hasattr(profile, "experience_weight"):
+        try:
+            return profile.experience_weight()
+        except Exception:
+            pass
+
+    experience = str(getattr(profile, "experience", "")).lower()
+
+    scores = {
+        "beginner": 1,
+        "intermediate": 2,
+        "advanced": 3,
+    }
+
+    return scores.get(experience, 1)
+
+
+def _average_received_rating(user):
+    average = Rating.objects.filter(ratee=user).aggregate(
+        average=Avg("score")
+    )["average"]
+
+    if average is None:
+        return 3.0
+
+    return float(average)
+
+
+def _player_allocation_score(user):
+    try:
+        profile = user.profile
+    except Exception:
+        profile = None
+
+    if not profile:
+        return 0.0
+
+    skill = float(getattr(profile, "skill_level", 0) or 0)
+    fitness = float(getattr(profile, "fitness_level", 0) or 0)
+    peer_rating = _average_received_rating(user)
+    experience = float(_experience_score(profile))
+
+    # Weighted score. Easy to explain in your demo without summoning maths demons.
+    score = (
+        (skill * 0.40) +
+        (fitness * 0.25) +
+        (peer_rating * 0.25) +
+        (experience * 0.10)
+    )
+
+    return round(score, 1)
+
+
+def _player_position(user):
+    try:
+        return _choice_label(user.profile, "position_preference", "Any")
+    except Exception:
+        return "Any"
+
+
+def _build_player_row(user):
+    try:
+        profile = user.profile
+    except Exception:
+        profile = None
+
+    return {
+        "user": user,
+        "username": user.get_full_name().strip() or user.username,
+        "position": _player_position(user),
+        "score": _player_allocation_score(user),
+        "skill": getattr(profile, "skill_level", 0) if profile else 0,
+        "fitness": getattr(profile, "fitness_level", 0) if profile else 0,
+        "experience": _choice_label(profile, "experience", "Not set"),
+    }
+
+
+def _team_metric_average(rows, key):
+    if not rows:
+        return 0
+
+    total = sum(float(row.get(key, 0) or 0) for row in rows)
+    return round(total / len(rows), 1)
+
+
+def _position_balance_score(rows):
+    if not rows:
+        return 0
+
+    positions = [
+        str(row.get("position", "Any")).lower()
+        for row in rows
+    ]
+
+    unique_positions = len(set(positions))
+    total_positions = len(positions)
+
+    return round((unique_positions / total_positions) * 100)
+
+
+def _team_radar_data(rows):
+    if not rows:
+        return [0, 0, 0, 0, 0]
+
+    avg_skill = _team_metric_average(rows, "skill") * 20
+    avg_fitness = _team_metric_average(rows, "fitness") * 20
+    position_balance = _position_balance_score(rows)
+
+    experience_scores = []
+    for row in rows:
+        exp = str(row.get("experience", "")).lower()
+
+        if "advanced" in exp:
+            experience_scores.append(100)
+        elif "intermediate" in exp:
+            experience_scores.append(66)
+        else:
+            experience_scores.append(33)
+
+    avg_experience = round(sum(experience_scores) / len(experience_scores)) if experience_scores else 0
+    avg_score = _team_metric_average(rows, "score") * 20
+
+    return [
+        round(avg_skill),
+        round(position_balance),
+        round(avg_fitness),
+        round(avg_experience),
+        round(avg_score),
+    ]
+
+
+def _fairness_score(team_a_total, team_b_total):
+    if team_a_total <= 0 and team_b_total <= 0:
+        return 0
+
+    biggest = max(team_a_total, team_b_total)
+
+    if biggest <= 0:
+        return 0
+
+    difference = abs(team_a_total - team_b_total)
+    score = 100 - ((difference / biggest) * 100)
+
+    return max(0, round(score))
+
+
+def _generate_balanced_assignments(session):
     participants = (
         Participation.objects
         .filter(session=session)
         .select_related("user", "user__profile")
+        .order_by("user__username")
     )
 
     if participants.count() < 2:
-        return redirect("session_detail", session_id=session.id)
+        return False
 
     player_scores = []
 
     for participation in participants:
-        score = _profile_score(participation.user)
-        player_scores.append((participation.user, score))
+        user = participation.user
+        score = _player_allocation_score(user)
+        player_scores.append((user, score))
 
-    player_scores.sort(key=lambda x: x[1], reverse=True)
+    player_scores.sort(key=lambda item: item[1], reverse=True)
 
     team_a = []
     team_b = []
-    sum_a = 0.0
-    sum_b = 0.0
+    team_a_total = 0.0
+    team_b_total = 0.0
 
     for user, score in player_scores:
-        if sum_a <= sum_b:
+        if team_a_total <= team_b_total:
             team_a.append(user)
-            sum_a += score
+            team_a_total += score
         else:
             team_b.append(user)
-            sum_b += score
+            team_b_total += score
 
     with transaction.atomic():
         TeamAssignment.objects.filter(session=session).delete()
@@ -611,18 +796,180 @@ def generate_teams(request, session_id):
             TeamAssignment.objects.create(
                 session=session,
                 user=user,
-                team=TeamAssignment.TEAM_A,
+                team=TeamAssignment.TEAM_A
             )
 
         for user in team_b:
             TeamAssignment.objects.create(
                 session=session,
                 user=user,
-                team=TeamAssignment.TEAM_B,
+                team=TeamAssignment.TEAM_B
             )
 
-    return redirect("session_detail", session_id=session.id)
+    return True
 
+@login_required
+def generate_teams(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if request.method != "POST":
+        return redirect("team_allocation", session_id=session.id)
+
+    if not _is_organiser_user(request.user):
+        return HttpResponseForbidden("Only organisers can generate teams.")
+
+    if request.user != session.created_by and not request.user.is_staff:
+        return HttpResponseForbidden("Only the session organiser can generate teams.")
+
+    created = _generate_balanced_assignments(session)
+
+    if created:
+        messages.success(request, "Teams generated successfully.")
+    else:
+        messages.error(request, "At least 2 players are needed to generate teams.")
+
+    return redirect("team_allocation", session_id=session.id)
+
+
+@login_required
+def team_allocation(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if not _is_organiser_user(request.user):
+        return HttpResponseForbidden("Only organisers can access team allocation.")
+
+    if request.user != session.created_by and not request.user.is_staff:
+        return HttpResponseForbidden("Only the session organiser can access this allocation.")
+
+    participants = (
+        Participation.objects
+        .filter(session=session)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    current_count = participants.count()
+    team_size = round(current_count / 2) if current_count else 0
+
+    team_a_assignments = (
+        TeamAssignment.objects
+        .filter(session=session, team=TeamAssignment.TEAM_A)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    team_b_assignments = (
+        TeamAssignment.objects
+        .filter(session=session, team=TeamAssignment.TEAM_B)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    team_a_rows = [_build_player_row(assignment.user) for assignment in team_a_assignments]
+    team_b_rows = [_build_player_row(assignment.user) for assignment in team_b_assignments]
+
+    allocated_user_ids = set(
+        TeamAssignment.objects
+        .filter(session=session)
+        .values_list("user_id", flat=True)
+    )
+
+    unallocated_rows = [
+        _build_player_row(participation.user)
+        for participation in participants
+        if participation.user_id not in allocated_user_ids
+    ]
+
+    team_a_total = round(sum(row["score"] for row in team_a_rows), 1)
+    team_b_total = round(sum(row["score"] for row in team_b_rows), 1)
+
+    team_a_average = round(team_a_total / len(team_a_rows), 1) if team_a_rows else 0
+    team_b_average = round(team_b_total / len(team_b_rows), 1) if team_b_rows else 0
+
+    fairness_score = _fairness_score(team_a_total, team_b_total)
+
+    if fairness_score >= 90:
+        fairness_label = "Fair"
+    elif fairness_score >= 75:
+        fairness_label = "Mostly Fair"
+    else:
+        fairness_label = "Needs Review"
+
+    is_ready = current_count >= 2
+    has_allocation = bool(team_a_rows or team_b_rows)
+
+    return render(request, "scheduling/team_allocation.html", {
+        "session": session,
+        "current_count": current_count,
+        "team_size": team_size,
+        "is_ready": is_ready,
+        "has_allocation": has_allocation,
+
+        "team_a_rows": team_a_rows,
+        "team_b_rows": team_b_rows,
+        "unallocated_rows": unallocated_rows,
+
+        "team_a_total": team_a_total,
+        "team_b_total": team_b_total,
+        "team_a_average": team_a_average,
+        "team_b_average": team_b_average,
+
+        "fairness_score": fairness_score,
+        "fairness_label": fairness_label,
+
+        "radar_labels": [
+            "Skill Level",
+            "Position Balance",
+            "Fitness Level",
+            "Experience",
+            "Recent Form",
+        ],
+        "team_a_radar": _team_radar_data(team_a_rows),
+        "team_b_radar": _team_radar_data(team_b_rows),
+
+        "sidebar_session_id": session.id,
+    })
+
+
+@login_required
+def cancel_team_allocation(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if request.method != "POST":
+        return redirect("team_allocation", session_id=session.id)
+
+    if not _is_organiser_user(request.user):
+        return HttpResponseForbidden("Only organisers can cancel team allocation.")
+
+    if request.user != session.created_by and not request.user.is_staff:
+        return HttpResponseForbidden("Only the session organiser can cancel this allocation.")
+
+    TeamAssignment.objects.filter(session=session).delete()
+    messages.success(request, "Team allocation cancelled.")
+
+    return redirect("team_allocation", session_id=session.id)
+
+
+@login_required
+def confirm_team_allocation(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if request.method != "POST":
+        return redirect("team_allocation", session_id=session.id)
+
+    if not _is_organiser_user(request.user):
+        return HttpResponseForbidden("Only organisers can confirm team allocation.")
+
+    if request.user != session.created_by and not request.user.is_staff:
+        return HttpResponseForbidden("Only the session organiser can confirm this allocation.")
+
+    if not TeamAssignment.objects.filter(session=session).exists():
+        messages.error(request, "Generate teams before confirming allocation.")
+        return redirect("team_allocation", session_id=session.id)
+
+    messages.success(request, "Teams confirmed successfully.")
+
+    return redirect("session_detail", session_id=session.id)
 
 @login_required
 def view_teams(request, session_id):
@@ -888,13 +1235,10 @@ def rate_session(request, session_id):
     if not Participation.objects.filter(session=session, user=request.user).exists():
         return HttpResponseForbidden("Join the session before rating.")
 
-    if timezone.now() < session.start_datetime:
-        return HttpResponseForbidden("You can rate after the session time.")
-
     participants = (
         Participation.objects
         .filter(session=session)
-        .select_related("user")
+        .select_related("user", "user__profile")
         .order_by("user__username")
     )
 
@@ -904,70 +1248,99 @@ def rate_session(request, session_id):
         if participation.user_id != request.user.id
     ]
 
-    if request.method == "POST":
-        for user in ratees:
-            prefix = f"user_{user.id}"
-            form = RatingForm(request.POST, prefix=prefix)
+    is_completed = timezone.now() >= session.start_datetime
+    current_count = participants.count()
 
-            if form.is_valid():
-                score = form.cleaned_data["score"]
-                comment = form.cleaned_data["comment"]
+    previous_ratings = Rating.objects.filter(rater=request.user)
+    total_ratings_given = previous_ratings.count()
 
-                Rating.objects.update_or_create(
-                    session=session,
-                    rater=request.user,
-                    ratee=user,
-                    defaults={
-                        "score": score,
-                        "comment": comment,
-                    },
-                )
+    average_rating_given = previous_ratings.aggregate(
+        average=Avg("score")
+    )["average"]
 
-        for user in ratees:
-            avg_score = (
-                Rating.objects
-                .filter(ratee=user)
-                .aggregate(avg=Avg("score"))["avg"]
-                or 0.0
-            )
+    if average_rating_given is not None:
+        average_rating_given = round(average_rating_given, 1)
 
-            profile = getattr(user, "profile", None)
+    sessions_attended = Participation.objects.filter(
+        user=request.user,
+        attended=True,
+    ).count()
 
-            if profile and hasattr(profile, "overall_rating"):
-                profile.overall_rating = float(avg_score)
-                profile.save(update_fields=["overall_rating"])
-
-        messages.success(request, "Ratings saved.")
-
-        return redirect("session_detail", session_id=session.id)
-
-    existing = {
+    existing_ratings = {
         rating.ratee_id: rating
         for rating in Rating.objects.filter(session=session, rater=request.user)
     }
 
-    forms = []
+    if request.method == "POST":
+        saved_count = 0
 
-    for user in ratees:
-        if user.id in existing:
-            initial = {
-                "ratee_id": user.id,
-                "score": existing[user.id].score,
-                "comment": existing[user.id].comment,
-            }
+        for ratee in ratees:
+            prefix = f"user_{ratee.id}"
+            form = RatingForm(request.POST, prefix=prefix)
+
+            if form.is_valid():
+                score = form.cleaned_data.get("score")
+                comment = form.cleaned_data.get("comment", "").strip()
+
+                if score:
+                    Rating.objects.update_or_create(
+                        session=session,
+                        rater=request.user,
+                        ratee=ratee,
+                        defaults={
+                            "score": int(score),
+                            "comment": comment,
+                        },
+                    )
+
+                    avg_score = Rating.objects.filter(ratee=ratee).aggregate(
+                        average=Avg("score")
+                    )["average"] or 0.0
+
+                    if hasattr(ratee, "profile"):
+                        ratee.profile.overall_rating = float(avg_score)
+                        ratee.profile.save(update_fields=["overall_rating"])
+
+                    saved_count += 1
+
+        if saved_count > 0:
+            messages.success(request, f"Saved {saved_count} rating{'' if saved_count == 1 else 's'}.")
         else:
+            messages.info(request, "No ratings were selected.")
+
+        return redirect("session_detail", session_id=session.id)
+
+    rating_forms = []
+
+    for ratee in ratees:
+        existing = existing_ratings.get(ratee.id)
+
+        initial = {}
+
+        if existing:
             initial = {
-                "ratee_id": user.id,
-                "score": 3,
-                "comment": "",
+                "score": str(existing.score),
+                "comment": existing.comment,
             }
 
-        forms.append((
-            user,
-            RatingForm(prefix=f"user_{user.id}", initial=initial),
-        ))
+        rating_forms.append({
+            "user": ratee,
+            "form": RatingForm(prefix=f"user_{ratee.id}", initial=initial),
+            "existing": existing,
+        })
 
     return render(request, "scheduling/rate_session.html", {
         "session": session,
-        "forms": forms,
+        "participants": participants,
+        "ratees": ratees,
+        "rating_forms": rating_forms,
+
+        "is_completed": is_completed,
+        "current_count": current_count,
+
+        "total_ratings_given": total_ratings_given,
+        "average_rating_given": average_rating_given,
+        "sessions_attended": sessions_attended,
+
+        "sidebar_session_id": session.id,
     })

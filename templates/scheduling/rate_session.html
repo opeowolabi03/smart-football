@@ -1,19 +1,214 @@
 {% extends "base.html" %}
+
 {% block content %}
 
-<h2>Rate players for: {{ session.title }}</h2>
+<section class="dashboard-page feedback-page">
+  <div class="dashboard-layout">
 
-<form method="post">
-  {% csrf_token %}
+    {% include "includes/sidebar.html" with active_page="ratings" sidebar_session_id=session.id %}
 
-  {% for user, form in forms %}
-    <fieldset style="margin-bottom:14px; padding:10px; border:1px solid #ccc;">
-      <legend>{{ user.username }}</legend>
-      {{ form.as_p }}
-    </fieldset>
-  {% endfor %}
+    <div class="dashboard-main">
 
-  <button type="submit">Save ratings</button>
-</form>
+      <div class="match-breadcrumb">
+        <a href="{% url 'session_list' %}">My Sessions</a>
+        <span>›</span>
+        <a href="{% url 'session_detail' session.id %}">{{ session.title }}</a>
+        <span>›</span>
+        <strong>Rate Session</strong>
+      </div>
+
+      {% if messages %}
+        <div class="allocation-messages">
+          {% for message in messages %}
+            <div class="allocation-message allocation-message-{{ message.tags }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <section class="feedback-header">
+        <div>
+          <p class="eyebrow">Ratings</p>
+          <h1>Rate Session / Feedback</h1>
+          <p>Your feedback helps improve fairness and future team allocation.</p>
+        </div>
+      </section>
+
+      <section class="feedback-session-card">
+        <div class="feedback-date-card">
+          <span>{{ session.start_datetime|date:"D" }}</span>
+          <strong>{{ session.start_datetime|date:"d" }}</strong>
+          <span>{{ session.start_datetime|date:"M" }}</span>
+        </div>
+
+        <div class="feedback-session-info">
+          <h2>{{ session.title }}</h2>
+
+          <div class="feedback-meta-row">
+            <span>🕒 {{ session.start_datetime|time:"g:i A" }}</span>
+            <span>📍 {{ session.location }}</span>
+            <span>👥 {{ current_count }} / {{ session.capacity }} players</span>
+          </div>
+
+          {% if is_completed %}
+            <span class="status-badge status-completed">Completed</span>
+          {% else %}
+            <span class="status-badge status-upcoming">Upcoming</span>
+          {% endif %}
+
+          <p>
+            Rate the players you played with. These ratings can help improve future team balancing.
+          </p>
+        </div>
+
+        <a class="btn btn-outline feedback-details-btn" href="{% url 'session_detail' session.id %}">
+          View Session Details
+        </a>
+      </section>
+
+      <section class="feedback-grid">
+
+        <form class="feedback-main-card" method="post">
+          {% csrf_token %}
+
+          <div class="feedback-section-heading">
+            <h2>1. Rate Players</h2>
+            <p>Give each player a score from 1 to 5 footballs. Comments are optional.</p>
+          </div>
+
+          {% if rating_forms %}
+            <div class="player-feedback-list">
+              {% for item in rating_forms %}
+                <article class="player-feedback-card">
+                  <div class="player-feedback-top">
+                    <div class="player-feedback-name">
+                      <span class="mini-avatar">👤</span>
+
+                      <div>
+                        <strong>
+                          {{ item.user.get_full_name|default:item.user.username }}
+                        </strong>
+
+                        <small>{{ item.user.username }}</small>
+                      </div>
+                    </div>
+
+                    {% if item.existing %}
+                      <span class="saved-rating-pill">Previously rated</span>
+                    {% endif %}
+                  </div>
+
+                  <div class="football-feedback-row">
+                    <span>Performance Rating</span>
+
+                    <div class="feedback-ball-rating">
+                      {% for radio in item.form.score %}
+                        <label class="feedback-ball-option">
+                          {{ radio.tag }}
+                          <span>⚽</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </div>
+
+                  <div class="form-group feedback-comment-group">
+                    <label for="{{ item.form.comment.id_for_label }}">Comment</label>
+                    {{ item.form.comment }}
+
+                    {% if item.form.comment.errors %}
+                      <div class="field-errors">
+                        {{ item.form.comment.errors }}
+                      </div>
+                    {% endif %}
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <h3>No players to rate</h3>
+              <p>You cannot rate yourself, and no other players joined this session.</p>
+            </div>
+          {% endif %}
+
+          <div class="feedback-form-footer">
+            <a class="btn btn-outline feedback-cancel-btn" href="{% url 'session_detail' session.id %}">
+              Cancel
+            </a>
+
+            <button class="btn btn-secondary feedback-submit-btn" type="submit">
+              Submit Feedback
+            </button>
+          </div>
+        </form>
+
+        <aside class="feedback-side-stack">
+
+          <section class="feedback-side-card">
+            <div class="side-card-heading">
+              <h2>Your Previous Ratings</h2>
+              <span>Your contributions</span>
+            </div>
+
+            <div class="feedback-stats-list">
+              <div>
+                <span>Total Ratings Given</span>
+                <strong>{{ total_ratings_given }}</strong>
+              </div>
+
+              <div>
+                <span>Average Rating Given</span>
+                {% if average_rating_given %}
+                  <strong>{{ average_rating_given }} / 5</strong>
+                {% else %}
+                  <strong>No ratings yet</strong>
+                {% endif %}
+              </div>
+
+              <div>
+                <span>Sessions Attended</span>
+                <strong>{{ sessions_attended }}</strong>
+              </div>
+            </div>
+
+            <p class="green-note">
+              Thank you for helping build a fairer community.
+            </p>
+          </section>
+
+          <section class="feedback-side-card feedback-why-card">
+            <h2>Why Your Feedback Matters</h2>
+
+            <ul>
+              <li>Your ratings help adjust player levels</li>
+              <li>Improves team balance in future matches</li>
+              <li>Helps organisers understand player performance</li>
+              <li>Supports a better experience for everyone</li>
+            </ul>
+          </section>
+
+          <section class="feedback-side-card">
+            <h2>Rating Guidelines</h2>
+
+            <ol class="guideline-list">
+              <li>Be honest and respectful.</li>
+              <li>Rate players based on performance.</li>
+              <li>Avoid personal bias or external factors.</li>
+              <li>Your comments should stay constructive.</li>
+            </ol>
+
+            <p class="green-note">
+              Feedback remains linked to the session for fairness tracking.
+            </p>
+          </section>
+
+        </aside>
+
+      </section>
+
+    </div>
+  </div>
+</section>
 
 {% endblock %}

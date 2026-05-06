@@ -30,10 +30,29 @@
       </a>
     {% endif %}
 
+    {% if global_is_organiser and sidebar_session_id %}
+      <a class="sidebar-link {% if active_page == 'team_allocation' %}active{% endif %}" href="{% url 'team_allocation' sidebar_session_id %}">
+        <span>🧩</span>
+        Team Allocation
+      </a>
+    {% endif %}
+
     <a class="sidebar-link {% if active_page == 'profile' %}active{% endif %}" href="{% url 'edit_profile' %}">
       <span>👤</span>
       My Profile
     </a>
+
+    {% if sidebar_session_id %}
+      <a class="sidebar-link {% if active_page == 'ratings' %}active{% endif %}" href="{% url 'rate_session' sidebar_session_id %}">
+        <span>⭐</span>
+        Ratings
+      </a>
+    {% else %}
+      <span class="sidebar-link sidebar-muted">
+        <span>⭐</span>
+        Ratings
+      </span>
+    {% endif %}
 
     <span class="sidebar-link sidebar-muted">
       <span>💬</span>
