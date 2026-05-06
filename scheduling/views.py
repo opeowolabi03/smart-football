@@ -104,29 +104,148 @@ def _session_status(session):
     return "Upcoming"
 
 
-def _profile_score(user):
+def _get_user_profile(user):
+    """
+    Safely gets a user's profile.
+    This avoids crashes if a profile is missing.
+    """
     try:
-        profile = user.profile
+        return user.profile
     except Exception:
-        return 0
+        return None
+
+
+def _clamp_number(value, minimum, maximum, default=0):
+    """
+    Keeps numbers inside a safe range.
+    Example: skill cannot go below 1 or above 5.
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = default
+
+    return max(minimum, min(value, maximum))
+
+
+def _experience_score(profile):
+    """
+    Converts experience text into a 1-5 score.
+    """
+    if not profile:
+        return 1.0
+
+    experience_value = str(getattr(profile, "experience", "")).lower()
 
     experience_scores = {
-        "beginner": 1,
-        "intermediate": 2,
-        "advanced": 3,
+        "beginner": 1.0,
+        "intermediate": 3.0,
+        "advanced": 5.0,
     }
 
-    experience_value = experience_scores.get(
-        str(getattr(profile, "experience", "")).lower(),
-        1,
+    return experience_scores.get(experience_value, 1.0)
+
+
+def _peer_rating_score(user):
+    """
+    Gets the average peer rating received by this player.
+    If they have no ratings yet, use 3/5 as a neutral default.
+    """
+    average_rating = Rating.objects.filter(ratee=user).aggregate(
+        average=Avg("score")
+    )["average"]
+
+    if average_rating is None:
+        return 3.0
+
+    return _clamp_number(average_rating, 1, 5, default=3)
+
+
+def _reliability_score(user):
+    """
+    Uses attendance reliability as part of team balancing.
+    If profile.reliability_score exists, it should be 0.0 to 1.0.
+    This converts it to a 1-5 score.
+    """
+    profile = _get_user_profile(user)
+
+    if not profile:
+        return 3.0
+
+    reliability = getattr(profile, "reliability_score", None)
+
+    if reliability is None:
+        return 3.0
+
+    reliability = _clamp_number(reliability, 0, 1, default=0.5)
+
+    return max(1.0, reliability * 5)
+
+
+def _profile_score(user):
+    """
+    Final player strength score used by Smart Football.
+
+    Score uses:
+    - skill level
+    - fitness level
+    - experience
+    - peer ratings
+    - attendance reliability
+
+    This supports the dissertation claim that team allocation uses
+    player information and feedback.
+    """
+    profile = _get_user_profile(user)
+
+    if not profile:
+        return 3.0
+
+    skill = _clamp_number(getattr(profile, "skill_level", 3), 1, 5, default=3)
+    fitness = _clamp_number(getattr(profile, "fitness_level", 3), 1, 5, default=3)
+    experience = _experience_score(profile)
+    peer_rating = _peer_rating_score(user)
+    reliability = _reliability_score(user)
+
+    final_score = (
+        (skill * 0.30) +
+        (fitness * 0.20) +
+        (experience * 0.15) +
+        (peer_rating * 0.25) +
+        (reliability * 0.10)
     )
 
-    return (
-        (getattr(profile, "skill_level", 0) * 2)
-        + getattr(profile, "fitness_level", 0)
-        + experience_value
-    )
+    return round(final_score, 2)
 
+
+def _team_fairness_score(team_a_total, team_b_total):
+    """
+    Returns a fairness score out of 100.
+    A smaller difference between teams means a higher fairness score.
+    """
+    highest_total = max(team_a_total, team_b_total)
+
+    if highest_total <= 0:
+        return 0
+
+    difference = abs(team_a_total - team_b_total)
+
+    fairness = 100 - ((difference / highest_total) * 100)
+
+    return round(max(0, fairness))
+
+
+def _fairness_label(score):
+    if score >= 90:
+        return "Excellent"
+
+    if score >= 75:
+        return "Good"
+
+    if score >= 60:
+        return "Fair"
+
+    return "Needs review"
 
 def _attendance_percentage(count, total):
     if total <= 0:
@@ -484,12 +603,12 @@ def session_detail(request, session_id):
 
     joined = False
     if request.user.is_authenticated:
-        joined = Participation.objects.filter(session=session, user=request.user).exists()
+        joined = Participation.objects.filter(
+            session=session,
+            user=request.user,
+        ).exists()
 
-    is_session_organiser = (
-        request.user.is_authenticated
-        and (request.user == session.created_by or request.user.is_staff)
-    )
+    is_organiser = request.user.is_authenticated and request.user == session.created_by
 
     attended_count = participants.filter(attended=True).count()
     not_marked_count = current_count - attended_count
@@ -515,6 +634,7 @@ def session_detail(request, session_id):
             "user": user,
             "role": role,
             "score": _profile_score(user),
+            "peer_rating": _peer_rating_score(user),
         })
 
     team_a_assignments = (
@@ -536,25 +656,42 @@ def session_detail(request, session_id):
 
     for assignment in team_a_assignments:
         score = _profile_score(assignment.user)
+
         team_a_rows.append({
             "assignment": assignment,
             "user": assignment.user,
             "score": score,
+            "peer_rating": _peer_rating_score(assignment.user),
         })
 
     for assignment in team_b_assignments:
         score = _profile_score(assignment.user)
+
         team_b_rows.append({
             "assignment": assignment,
             "user": assignment.user,
             "score": score,
+            "peer_rating": _peer_rating_score(assignment.user),
         })
 
-    team_a_total = sum(row["score"] for row in team_a_rows)
-    team_b_total = sum(row["score"] for row in team_b_rows)
+    team_a_total = round(sum(row["score"] for row in team_a_rows), 2)
+    team_b_total = round(sum(row["score"] for row in team_b_rows), 2)
 
-    team_a_average = round(team_a_total / len(team_a_rows), 1) if team_a_rows else 0
-    team_b_average = round(team_b_total / len(team_b_rows), 1) if team_b_rows else 0
+    team_a_average = round(team_a_total / len(team_a_rows), 2) if team_a_rows else 0
+    team_b_average = round(team_b_total / len(team_b_rows), 2) if team_b_rows else 0
+
+    team_difference = round(abs(team_a_total - team_b_total), 2)
+    fairness_score = _team_fairness_score(team_a_total, team_b_total)
+    fairness_label = _fairness_label(fairness_score)
+
+    if fairness_score >= 90:
+        fairness_class = "fairness-excellent"
+    elif fairness_score >= 75:
+        fairness_class = "fairness-good"
+    elif fairness_score >= 60:
+        fairness_class = "fairness-fair"
+    else:
+        fairness_class = "fairness-warning"
 
     capacity_percentage = _attendance_percentage(current_count, session.capacity)
 
@@ -574,7 +711,7 @@ def session_detail(request, session_id):
         "is_full": is_full,
         "is_completed": is_completed,
         "status_label": status_label,
-        "is_organiser": is_session_organiser,
+        "is_organiser": is_organiser,
 
         "current_count": current_count,
         "capacity_percentage": capacity_percentage,
@@ -590,6 +727,10 @@ def session_detail(request, session_id):
         "team_b_total": team_b_total,
         "team_a_average": team_a_average,
         "team_b_average": team_b_average,
+        "team_difference": team_difference,
+        "fairness_score": fairness_score,
+        "fairness_label": fairness_label,
+        "fairness_class": fairness_class,
 
         "average_session_rating": average_session_rating,
     })
@@ -844,23 +985,77 @@ def generate_teams(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
 
     if request.method != "POST":
-        return redirect("team_allocation", session_id=session.id)
+        return redirect("session_detail", session_id=session.id)
 
-    if not _is_organiser_user(request.user):
-        return HttpResponseForbidden("Only organisers can generate teams.")
+    if request.user != session.created_by:
+        return HttpResponseForbidden("Only the organiser can generate teams.")
 
-    if request.user != session.created_by and not request.user.is_staff:
-        return HttpResponseForbidden("Only the session organiser can generate teams.")
+    participants = (
+        Participation.objects
+        .filter(session=session)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
 
-    created = _generate_balanced_assignments(session)
-
-    if created:
-        messages.success(request, "Teams generated successfully.")
-    else:
+    if participants.count() < 2:
         messages.error(request, "At least 2 players are needed to generate teams.")
+        return redirect("session_detail", session_id=session.id)
 
-    return redirect("team_allocation", session_id=session.id)
+    player_scores = []
 
+    for participation in participants:
+        user = participation.user
+        score = _profile_score(user)
+
+        player_scores.append({
+            "user": user,
+            "score": score,
+        })
+
+    # Highest strength players are allocated first.
+    player_scores.sort(key=lambda player: player["score"], reverse=True)
+
+    team_a = []
+    team_b = []
+    team_a_total = 0.0
+    team_b_total = 0.0
+
+    for player in player_scores:
+        # Greedy balancing:
+        # place the next player into the currently weaker team.
+        if team_a_total <= team_b_total:
+            team_a.append(player)
+            team_a_total += player["score"]
+        else:
+            team_b.append(player)
+            team_b_total += player["score"]
+
+    with transaction.atomic():
+        TeamAssignment.objects.filter(session=session).delete()
+
+        for player in team_a:
+            TeamAssignment.objects.create(
+                session=session,
+                user=player["user"],
+                team=TeamAssignment.TEAM_A,
+            )
+
+        for player in team_b:
+            TeamAssignment.objects.create(
+                session=session,
+                user=player["user"],
+                team=TeamAssignment.TEAM_B,
+            )
+
+    fairness_score = _team_fairness_score(team_a_total, team_b_total)
+    difference = round(abs(team_a_total - team_b_total), 2)
+
+    messages.success(
+        request,
+        f"Teams generated. Fairness score: {fairness_score}%. Team difference: {difference}."
+    )
+
+    return redirect("session_detail", session_id=session.id)
 
 @login_required
 def team_allocation(request, session_id):
