@@ -333,21 +333,43 @@ def session_list(request):
     status_filter = request.GET.get("status", "all")
     format_filter = request.GET.get("format", "all")
     sort = request.GET.get("sort", "newest")
+    mine_filter = request.GET.get("mine") == "1"
 
-    sessions = (
-        MatchSession.objects
-        .all()
-        .annotate(
-            participant_count=Count("participants"),
-            attended_count=Count("participants", filter=Q(participants__attended=True)),
-        )
-    )
+    base_sessions = MatchSession.objects.all()
+
+    all_sessions_count = base_sessions.count()
+
+    my_sessions_count = 0
+
+    if request.user.is_authenticated:
+        if _is_organiser_user(request.user):
+            my_sessions_count = base_sessions.filter(created_by=request.user).count()
+        else:
+            my_sessions_count = base_sessions.filter(
+                participants__user=request.user
+            ).distinct().count()
+
+    sessions = base_sessions
+
+    if mine_filter:
+        if not request.user.is_authenticated:
+            return redirect("login")
+
+        if _is_organiser_user(request.user):
+            sessions = sessions.filter(created_by=request.user)
+        else:
+            sessions = sessions.filter(participants__user=request.user).distinct()
 
     if query:
         sessions = sessions.filter(
             Q(title__icontains=query) |
             Q(location__icontains=query)
         )
+
+    sessions = sessions.annotate(
+        participant_count=Count("participants"),
+        attended_count=Count("participants", filter=Q(participants__attended=True)),
+    )
 
     if sort == "oldest":
         sessions = sessions.order_by("start_datetime")
@@ -366,10 +388,8 @@ def session_list(request):
             session.attendance_rate = round(
                 (session.attended_count / session.participant_count) * 100
             )
-            session.attendance_style = f"width: {session.attendance_rate}%;"
         else:
             session.attendance_rate = None
-            session.attendance_style = "width: 0%;"
 
         session.is_full = session.participant_count >= session.capacity
 
@@ -381,7 +401,13 @@ def session_list(request):
         else:
             session.user_joined = False
 
-        if status_filter != "all" and session.status_label.lower() != status_filter:
+        if status_filter == "upcoming" and session.status_label != "Upcoming":
+            continue
+
+        if status_filter == "completed" and session.status_label != "Completed":
+            continue
+
+        if status_filter == "full" and not session.is_full:
             continue
 
         if format_filter != "all" and session.format_label.lower() != format_filter:
@@ -401,15 +427,20 @@ def session_list(request):
     return render(request, "scheduling/session_list.html", {
         "page_obj": page_obj,
         "sessions": page_obj.object_list,
+
         "query": query,
         "status_filter": status_filter,
         "format_filter": format_filter,
         "sort": sort,
+        "mine_filter": mine_filter,
+
         "total_count": total_count,
         "upcoming_count": upcoming_count,
         "completed_count": completed_count,
         "full_count": full_count,
-        "is_organiser": _is_organiser_user(request.user),
+
+        "all_sessions_count": all_sessions_count,
+        "my_sessions_count": my_sessions_count,
     })
 
 

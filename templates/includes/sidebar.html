@@ -18,7 +18,12 @@
       </a>
     {% endif %}
 
-    <a class="sidebar-link {% if active_page == 'sessions' %}active{% endif %}" href="{% url 'session_list' %}">
+    <a class="sidebar-link {% if request.GET.mine == '1' %}active{% endif %}" href="{% url 'session_list' %}?mine=1">
+      <span>📌</span>
+      My Sessions
+    </a>
+
+    <a class="sidebar-link {% if active_page == 'sessions' and request.GET.mine != '1' %}active{% endif %}" href="{% url 'session_list' %}">
       <span>📅</span>
       All Sessions
     </a>

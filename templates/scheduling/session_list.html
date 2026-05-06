@@ -10,17 +10,34 @@
     <div class="dashboard-main">
       <div class="sessions-topbar">
         <div>
-          <p class="eyebrow">All Sessions</p>
-          <h1>All Match Sessions</h1>
-          <p>View, join, and manage available community football sessions.</p>
+          {% if mine_filter %}
+            <p class="eyebrow">My Sessions</p>
+            <h1>My Match Sessions</h1>
+
+            {% if global_is_organiser %}
+              <p>View and manage the match sessions you have created.</p>
+            {% else %}
+              <p>View the match sessions you have joined.</p>
+            {% endif %}
+          {% else %}
+            <p class="eyebrow">All Sessions</p>
+            <h1>All Match Sessions</h1>
+            <p>View, join, and manage available community football sessions.</p>
+          {% endif %}
         </div>
 
-        <a class="btn btn-primary create-match-btn" href="{% url 'session_create' %}">
-          + Create New Match
-        </a>
+        {% if global_is_organiser %}
+          <a class="btn btn-primary create-match-btn" href="{% url 'session_create' %}">
+            + Create New Match
+          </a>
+        {% endif %}
       </div>
 
       <form class="sessions-filter-card" method="get">
+        {% if mine_filter %}
+          <input type="hidden" name="mine" value="1">
+        {% endif %}
+
         <div class="filter-group search-filter">
           <label for="q">Search</label>
           <input
@@ -39,6 +56,7 @@
             <option value="all" {% if status_filter == "all" %}selected{% endif %}>All Statuses</option>
             <option value="upcoming" {% if status_filter == "upcoming" %}selected{% endif %}>Upcoming</option>
             <option value="completed" {% if status_filter == "completed" %}selected{% endif %}>Completed</option>
+            <option value="full" {% if status_filter == "full" %}selected{% endif %}>Full</option>
           </select>
         </div>
 
@@ -57,35 +75,53 @@
             Apply Filters
           </button>
 
-          <a class="btn btn-outline btn-filter" href="{% url 'session_list' %}">
-            Clear
-          </a>
+          {% if mine_filter %}
+            <a class="btn btn-outline btn-filter" href="{% url 'session_list' %}?mine=1">
+              Clear
+            </a>
+          {% else %}
+            <a class="btn btn-outline btn-filter" href="{% url 'session_list' %}">
+              Clear
+            </a>
+          {% endif %}
         </div>
       </form>
 
       <section class="sessions-table-card">
         <div class="session-tabs">
-          <a class="session-tab active" href="{% url 'session_list' %}">
-            All Sessions <span>{{ total_count }}</span>
+          <a class="session-tab {% if not mine_filter and status_filter == 'all' %}active{% endif %}" href="{% url 'session_list' %}">
+            All Sessions <span>{{ all_sessions_count }}</span>
           </a>
 
-          <a class="session-tab" href="?status=upcoming">
+          <a class="session-tab {% if mine_filter and status_filter == 'all' %}active{% endif %}" href="{% url 'session_list' %}?mine=1">
+            My Sessions <span>{{ my_sessions_count }}</span>
+          </a>
+
+          <a class="session-tab {% if status_filter == 'upcoming' %}active{% endif %}" href="{% url 'session_list' %}?{% if mine_filter %}mine=1&{% endif %}status=upcoming">
             Upcoming <span>{{ upcoming_count }}</span>
           </a>
 
-          <a class="session-tab" href="?status=completed">
+          <a class="session-tab {% if status_filter == 'completed' %}active{% endif %}" href="{% url 'session_list' %}?{% if mine_filter %}mine=1&{% endif %}status=completed">
             Completed <span>{{ completed_count }}</span>
           </a>
 
-          <a class="session-tab" href="?status=all">
+          <a class="session-tab {% if status_filter == 'full' %}active{% endif %}" href="{% url 'session_list' %}?{% if mine_filter %}mine=1&{% endif %}status=full">
             Full <span>{{ full_count }}</span>
           </a>
         </div>
 
         <div class="sessions-table-header">
-          <p>Showing {{ total_count }} session{{ total_count|pluralize }}</p>
+          {% if mine_filter %}
+            <p>Showing {{ total_count }} of your session{{ total_count|pluralize }}</p>
+          {% else %}
+            <p>Showing {{ total_count }} session{{ total_count|pluralize }}</p>
+          {% endif %}
 
           <form method="get" class="sort-form">
+            {% if mine_filter %}
+              <input type="hidden" name="mine" value="1">
+            {% endif %}
+
             <input type="hidden" name="q" value="{{ query }}">
             <input type="hidden" name="status" value="{{ status_filter }}">
             <input type="hidden" name="format" value="{{ format_filter }}">
@@ -121,6 +157,7 @@
                   <td>
                     <div class="table-session-title">
                       <span class="table-session-icon">📅</span>
+
                       <div>
                         <a class="session-title-link" href="{% url 'session_detail' session.id %}">
                           {{ session.title }}
@@ -200,11 +237,19 @@
                 <tr>
                   <td colspan="9">
                     <div class="empty-state">
-                      <h3>No sessions found</h3>
-                      <p>Try changing your search or filters.</p>
-                      <a class="btn btn-secondary btn-small" href="{% url 'session_create' %}">
-                        Create Session
-                      </a>
+                      {% if mine_filter %}
+                        <h3>No sessions found</h3>
+                        <p>You have not joined or created any sessions matching these filters.</p>
+                      {% else %}
+                        <h3>No sessions found</h3>
+                        <p>Try changing your search or filters.</p>
+                      {% endif %}
+
+                      {% if global_is_organiser %}
+                        <a class="btn btn-secondary btn-small" href="{% url 'session_create' %}">
+                          Create Session
+                        </a>
+                      {% endif %}
                     </div>
                   </td>
                 </tr>
@@ -220,13 +265,13 @@
 
           <div class="pagination-controls">
             {% if page_obj.has_previous %}
-              <a href="?page={{ page_obj.previous_page_number }}&q={{ query }}&status={{ status_filter }}&format={{ format_filter }}&sort={{ sort }}">‹</a>
+              <a href="?{% if mine_filter %}mine=1&{% endif %}page={{ page_obj.previous_page_number }}&q={{ query }}&status={{ status_filter }}&format={{ format_filter }}&sort={{ sort }}">‹</a>
             {% endif %}
 
             <span>{{ page_obj.number }}</span>
 
             {% if page_obj.has_next %}
-              <a href="?page={{ page_obj.next_page_number }}&q={{ query }}&status={{ status_filter }}&format={{ format_filter }}&sort={{ sort }}">›</a>
+              <a href="?{% if mine_filter %}mine=1&{% endif %}page={{ page_obj.next_page_number }}&q={{ query }}&status={{ status_filter }}&format={{ format_filter }}&sort={{ sort }}">›</a>
             {% endif %}
           </div>
         </div>
