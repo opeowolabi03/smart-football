@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="dashboard-page">
+  <div class="dashboard-layout">
+
+    {% include "includes/sidebar.html" with active_page="sessions" sidebar_session_id=session.id %}
+
+    <div class="dashboard-main">
+
+      <div class="match-breadcrumb">
+        <a href="{% url 'session_list' %}">All Sessions</a>
+        <span>›</span>
+        <a href="{% url 'session_detail' session.id %}">Match Details</a>
+        <span>›</span>
+        <strong>Results</strong>
+      </div>
+
+      <section class="results-header">
+        <div>
+          <h1>Match Results</h1>
+          <p>Post-match summary, attendance, player statistics, and team balance.</p>
+        </div>
+
+        <div class="results-header-actions">
+          <a class="btn btn-outline results-top-btn" href="{% url 'session_detail' session.id %}">
+            ← Back to Match Details
+          </a>
+
+          <a class="btn btn-outline results-top-btn" href="{% url 'rate_session' session.id %}">
+            ☆ Rate Session
+          </a>
+
+          <button class="btn btn-secondary results-top-btn" type="button" onclick="window.print()">
+            Export Results
+          </button>
+        </div>
+      </section>
+
+      <section class="results-session-card">
+        <div class="match-date-box">
+          <span>{{ session.start_datetime|date:"D" }}</span>
+          <strong>{{ session.start_datetime|date:"d" }}</strong>
+          <span>{{ session.start_datetime|date:"M" }}</span>
+        </div>
+
+        <div class="results-session-main">
+          <h2>{{ session.title }}</h2>
+
+          <div class="match-meta-row">
+            <span>🕒 {{ session.start_datetime|date:"D d M Y" }}, {{ session.start_datetime|time:"g:i A" }}</span>
+            <span>📍 {{ session.location }}</span>
+            <span>👥 {{ current_count }} / {{ session.capacity }} players</span>
+          </div>
+        </div>
+
+        <div class="results-session-status">
+          <span>Status</span>
+          <strong class="status-badge status-completed">Completed</strong>
+        </div>
+      </section>
+
+      <section class="scoreboard-card {{ winner_class }}">
+        <div class="score-team score-team-a">
+          <span class="team-shield">⚽</span>
+          <strong>Team A</strong>
+        </div>
+
+        <div class="score-main">
+          <strong>{{ result.team_a_score }}</strong>
+          <span>-</span>
+          <strong>{{ result.team_b_score }}</strong>
+          <small>{{ winner_label }}</small>
+        </div>
+
+        <div class="score-team score-team-b">
+          <span class="team-shield">⚽</span>
+          <strong>Team B</strong>
+        </div>
+      </section>
+
+      <section class="result-metrics-grid">
+        <article class="result-metric-card">
+          <span class="result-metric-icon green-icon">👥</span>
+          <div>
+            <p>Attendance</p>
+            <strong>{{ attended_count }} / {{ current_count }}</strong>
+            <small>Players</small>
+          </div>
+        </article>
+
+        <article class="result-metric-card">
+          <span class="result-metric-icon blue-icon">🥅</span>
+          <div>
+            <p>Goals Recorded</p>
+            <strong>{{ total_goals }}</strong>
+            <small>Total goals</small>
+          </div>
+        </article>
+
+        <article class="result-metric-card">
+          <span class="result-metric-icon teal-icon">☆</span>
+          <div>
+            <p>MVP</p>
+            <strong>{{ mvp_name }}</strong>
+            <small>{{ mvp_team }}</small>
+          </div>
+        </article>
+
+        <article class="result-metric-card">
+          <span class="result-metric-icon purple-icon">♢</span>
+          <div>
+            <p>Fairness Score</p>
+            <strong>{{ fairness_score }}%</strong>
+            <small>{{ fairness_label }}</small>
+          </div>
+        </article>
+      </section>
+
+      <section class="results-grid">
+
+        <section class="results-card match-stat-card">
+          <h2>Match Statistics</h2>
+
+          <div class="comparison-row">
+            <strong>Team A</strong>
+            <span>Possession</span>
+            <strong>Team B</strong>
+          </div>
+
+          <div class="stat-bar-row">
+            <span>{{ result.team_a_possession }}%</span>
+            <div class="dual-stat-bar">
+              <div class="bar-a" style="width: {{ result.team_a_possession }}%;"></div>
+              <div class="bar-b" style="width: {{ result.team_b_possession }}%;"></div>
+            </div>
+            <span>{{ result.team_b_possession }}%</span>
+          </div>
+
+          <div class="comparison-row">
+            <strong>{{ result.team_a_shots }}</strong>
+            <span>Shots</span>
+            <strong>{{ result.team_b_shots }}</strong>
+          </div>
+
+          <div class="comparison-row">
+            <strong>{{ result.team_a_chances }}</strong>
+            <span>Chances Created</span>
+            <strong>{{ result.team_b_chances }}</strong>
+          </div>
+
+          <div class="comparison-row">
+            <strong>{{ result.team_a_pass_accuracy }}%</strong>
+            <span>Pass Accuracy</span>
+            <strong>{{ result.team_b_pass_accuracy }}%</strong>
+          </div>
+
+          <div class="comparison-row">
+            <strong>{{ result.team_a_tackles }}</strong>
+            <span>Tackles Won</span>
+            <strong>{{ result.team_b_tackles }}</strong>
+          </div>
+        </section>
+
+        <section class="results-card team-result-card">
+          <h2>Team A</h2>
+
+          <div class="result-table-wrap">
+            <table class="result-player-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Position</th>
+                  <th>Goals</th>
+                  <th>Assists</th>
+                  <th>Rating</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for row in team_a_rows %}
+                  <tr>
+                    <td>{{ row.number }}</td>
+                    <td>
+                      <div class="result-player-name">
+                        <span>👤</span>
+                        <strong>{{ row.name }}</strong>
+                      </div>
+                    </td>
+                    <td><span class="position-pill">{{ row.position }}</span></td>
+                    <td>{{ row.goals }}</td>
+                    <td>{{ row.assists }}</td>
+                    <td><span class="rating-pill">{{ row.rating }}</span></td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="6">No Team A players.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+
+              <tfoot>
+                <tr>
+                  <td colspan="3">Team Total</td>
+                  <td>{{ team_a_goals }}</td>
+                  <td>{{ team_a_assists }}</td>
+                  <td><span class="rating-pill">{{ team_a_avg_rating }}</span></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+        <section class="results-card team-result-card">
+          <h2 class="team-b-title">Team B</h2>
+
+          <div class="result-table-wrap">
+            <table class="result-player-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Position</th>
+                  <th>Goals</th>
+                  <th>Assists</th>
+                  <th>Rating</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for row in team_b_rows %}
+                  <tr>
+                    <td>{{ row.number }}</td>
+                    <td>
+                      <div class="result-player-name">
+                        <span>👤</span>
+                        <strong>{{ row.name }}</strong>
+                      </div>
+                    </td>
+                    <td><span class="position-pill">{{ row.position }}</span></td>
+                    <td>{{ row.goals }}</td>
+                    <td>{{ row.assists }}</td>
+                    <td><span class="rating-pill blue-rating">{{ row.rating }}</span></td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="6">No Team B players.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+
+              <tfoot>
+                <tr>
+                  <td colspan="3">Team Total</td>
+                  <td>{{ team_b_goals }}</td>
+                  <td>{{ team_b_assists }}</td>
+                  <td><span class="rating-pill blue-rating">{{ team_b_avg_rating }}</span></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+      </section>
+
+      <section class="match-summary-card">
+        <h2>Match Summary</h2>
+
+        <div class="summary-grid">
+          <div>
+            <span>☆</span>
+            <strong>Top Scorer</strong>
+            {% if top_scorer %}
+              <p>{{ top_scorer.name }} ({{ top_scorer.goals }} goals)</p>
+            {% else %}
+              <p>No goals recorded</p>
+            {% endif %}
+          </div>
+
+          <div>
+            <span>👥</span>
+            <strong>Closest Matchup</strong>
+            <p>{{ team_difference }} score difference</p>
+          </div>
+
+          <div>
+            <span>⚖</span>
+            <strong>Balanced Teams</strong>
+            <p>Fairness score of {{ fairness_score }}%</p>
+          </div>
+
+          <div>
+            <span>✅</span>
+            <strong>Attendance</strong>
+            <p>{{ attended_count }} of {{ current_count }} players attended</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="result-note-card">
+        <p>
+          Teams were allocated using the fairness algorithm based on player ratings,
+          skill, fitness, position, and attendance data.
+        </p>
+      </section>
+
+    </div>
+  </div>
+</section>
+
+{% endblock %}

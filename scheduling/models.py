@@ -89,3 +89,75 @@ class TeamAssignment(models.Model):
 
     def __str__(self):
         return f"{self.user.username} -> Team {self.team} ({self.session.title})"
+    
+class MatchResult(models.Model):
+    session = models.OneToOneField(
+        MatchSession,
+        on_delete=models.CASCADE,
+        related_name="result",
+    )
+
+    team_a_score = models.PositiveIntegerField(default=0)
+    team_b_score = models.PositiveIntegerField(default=0)
+
+    team_a_possession = models.PositiveIntegerField(default=50)
+    team_b_possession = models.PositiveIntegerField(default=50)
+
+    team_a_shots = models.PositiveIntegerField(default=0)
+    team_b_shots = models.PositiveIntegerField(default=0)
+
+    team_a_chances = models.PositiveIntegerField(default=0)
+    team_b_chances = models.PositiveIntegerField(default=0)
+
+    team_a_pass_accuracy = models.PositiveIntegerField(default=0)
+    team_b_pass_accuracy = models.PositiveIntegerField(default=0)
+
+    team_a_tackles = models.PositiveIntegerField(default=0)
+    team_b_tackles = models.PositiveIntegerField(default=0)
+
+    mvp = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mvp_results",
+    )
+
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def winner_label(self):
+        if self.team_a_score > self.team_b_score:
+            return "Team A Wins"
+        if self.team_b_score > self.team_a_score:
+            return "Team B Wins"
+        return "Draw"
+
+    def __str__(self):
+        return f"{self.session.title}: {self.team_a_score} - {self.team_b_score}"
+
+
+class PlayerMatchStat(models.Model):
+    session = models.ForeignKey(
+        MatchSession,
+        on_delete=models.CASCADE,
+        related_name="player_stats",
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="match_stats",
+    )
+
+    goals = models.PositiveIntegerField(default=0)
+    assists = models.PositiveIntegerField(default=0)
+    rating = models.DecimalField(max_digits=3, decimal_places=1, default=0.0)
+
+    class Meta:
+        unique_together = ("session", "user")
+
+    def __str__(self):
+        return f"{self.user.username} stats for {self.session.title}"
+

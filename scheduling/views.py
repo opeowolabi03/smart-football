@@ -13,7 +13,14 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .forms import RatingForm
-from .models import MatchSession, Participation, Rating, TeamAssignment
+from .models import (
+    MatchSession,
+    Participation,
+    Rating,
+    TeamAssignment,
+    MatchResult,
+    PlayerMatchStat,
+)
 
 
 def _is_organiser_user(user):
@@ -1029,6 +1036,8 @@ def _generate_balanced_assignments(session):
 
     return True
 
+
+
 @login_required
 def generate_teams(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
@@ -1270,6 +1279,249 @@ def view_teams(request, session_id):
         "total1": total1,
         "total2": total2,
         "diff": abs(total1 - total2),
+    })
+
+def _position_label(user):
+    try:
+        profile = user.profile
+        display_method = getattr(profile, "get_position_preference_display", None)
+
+        if callable(display_method):
+            return display_method()
+
+        value = getattr(profile, "position_preference", "ANY")
+
+        position_map = {
+            "GK": "Goalkeeper",
+            "DEF": "Defender",
+            "MID": "Midfielder",
+            "FWD": "Forward",
+            "ANY": "Any",
+            "gk": "Goalkeeper",
+            "def": "Defender",
+            "mid": "Midfielder",
+            "fwd": "Forward",
+            "any": "Any",
+        }
+
+        return position_map.get(str(value), str(value).title())
+
+    except Exception:
+        return "Player"
+
+
+def _result_player_score(user):
+    try:
+        profile = user.profile
+    except Exception:
+        return 0
+
+    experience_scores = {
+        "beginner": 1,
+        "intermediate": 2,
+        "advanced": 3,
+    }
+
+    experience_value = experience_scores.get(
+        str(getattr(profile, "experience", "")).lower(),
+        1
+    )
+
+    return (
+        getattr(profile, "skill_level", 0)
+        + getattr(profile, "fitness_level", 0)
+        + experience_value
+    )
+
+
+def _calculate_result_fairness(team_a_users, team_b_users):
+    team_a_total = sum(_result_player_score(user) for user in team_a_users)
+    team_b_total = sum(_result_player_score(user) for user in team_b_users)
+
+    max_total = max(team_a_total, team_b_total, 1)
+    difference = abs(team_a_total - team_b_total)
+
+    fairness_score = round(100 - ((difference / max_total) * 100))
+    fairness_score = max(0, min(fairness_score, 100))
+
+    if fairness_score >= 85:
+        fairness_label = "Fair"
+    elif fairness_score >= 70:
+        fairness_label = "Mostly Fair"
+    else:
+        fairness_label = "Needs Review"
+
+    return fairness_score, fairness_label, difference
+
+@login_required
+def match_results(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if session.start_datetime > timezone.now():
+        messages.warning(request, "Results are only available after the match is completed.")
+        return redirect("session_detail", session_id=session.id)
+
+    participants = (
+        Participation.objects
+        .filter(session=session)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    current_count = participants.count()
+    attended_count = participants.filter(attended=True).count()
+
+    team_a_assignments = (
+        TeamAssignment.objects
+        .filter(session=session, team=TeamAssignment.TEAM_A)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    team_b_assignments = (
+        TeamAssignment.objects
+        .filter(session=session, team=TeamAssignment.TEAM_B)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    team_a_users = [assignment.user for assignment in team_a_assignments]
+    team_b_users = [assignment.user for assignment in team_b_assignments]
+
+    # fallback if teams have not been generated
+    if not team_a_users and not team_b_users:
+        participant_users = [participation.user for participation in participants]
+
+        for index, user in enumerate(participant_users):
+            if index % 2 == 0:
+                team_a_users.append(user)
+            else:
+                team_b_users.append(user)
+
+    result, created = MatchResult.objects.get_or_create(session=session)
+
+    stats = PlayerMatchStat.objects.filter(session=session).select_related("user")
+    stats_map = {
+        stat.user_id: stat
+        for stat in stats
+    }
+
+    def build_team_rows(users):
+        rows = []
+
+        for index, user in enumerate(users, start=1):
+            stat = stats_map.get(user.id)
+
+            goals = stat.goals if stat else 0
+            assists = stat.assists if stat else 0
+            rating = float(stat.rating) if stat else 0.0
+
+            rows.append({
+                "number": index,
+                "user": user,
+                "name": user.get_full_name().strip() or user.username,
+                "position": _position_label(user),
+                "goals": goals,
+                "assists": assists,
+                "rating": round(rating, 1),
+            })
+
+        return rows
+
+    team_a_rows = build_team_rows(team_a_users)
+    team_b_rows = build_team_rows(team_b_users)
+
+    team_a_goals = sum(row["goals"] for row in team_a_rows)
+    team_b_goals = sum(row["goals"] for row in team_b_rows)
+
+    team_a_assists = sum(row["assists"] for row in team_a_rows)
+    team_b_assists = sum(row["assists"] for row in team_b_rows)
+
+    team_a_avg_rating = round(
+        sum(row["rating"] for row in team_a_rows) / len(team_a_rows),
+        1
+    ) if team_a_rows else 0
+
+    team_b_avg_rating = round(
+        sum(row["rating"] for row in team_b_rows) / len(team_b_rows),
+        1
+    ) if team_b_rows else 0
+
+    fairness_score, fairness_label, team_difference = _calculate_result_fairness(
+        team_a_users,
+        team_b_users,
+    )
+
+    mvp = result.mvp
+
+    if not mvp:
+        all_rows = team_a_rows + team_b_rows
+        if all_rows:
+            best_row = sorted(
+                all_rows,
+                key=lambda row: (row["rating"], row["goals"], row["assists"]),
+                reverse=True
+            )[0]
+            mvp = best_row["user"]
+
+    if mvp:
+        mvp_name = mvp.get_full_name().strip() or mvp.username
+        mvp_team = "Team A" if mvp in team_a_users else "Team B"
+    else:
+        mvp_name = "Not selected"
+        mvp_team = "-"
+
+    if result.team_a_score > result.team_b_score:
+        winner_label = "Team A Wins"
+        winner_class = "team-a-wins"
+    elif result.team_b_score > result.team_a_score:
+        winner_label = "Team B Wins"
+        winner_class = "team-b-wins"
+    else:
+        winner_label = "Draw"
+        winner_class = "draw"
+
+    total_goals = result.team_a_score + result.team_b_score
+
+    top_scorer = None
+    all_player_rows = team_a_rows + team_b_rows
+
+    if all_player_rows:
+        top_scorer = sorted(
+            all_player_rows,
+            key=lambda row: row["goals"],
+            reverse=True,
+        )[0]
+
+    return render(request, "scheduling/match_results.html", {
+        "session": session,
+        "result": result,
+
+        "current_count": current_count,
+        "attended_count": attended_count,
+
+        "team_a_rows": team_a_rows,
+        "team_b_rows": team_b_rows,
+
+        "team_a_goals": team_a_goals,
+        "team_b_goals": team_b_goals,
+        "team_a_assists": team_a_assists,
+        "team_b_assists": team_b_assists,
+        "team_a_avg_rating": team_a_avg_rating,
+        "team_b_avg_rating": team_b_avg_rating,
+
+        "fairness_score": fairness_score,
+        "fairness_label": fairness_label,
+        "team_difference": team_difference,
+
+        "mvp_name": mvp_name,
+        "mvp_team": mvp_team,
+
+        "winner_label": winner_label,
+        "winner_class": winner_class,
+
+        "total_goals": total_goals,
+        "top_scorer": top_scorer,
     })
 
 

@@ -21,4 +21,5 @@ urlpatterns = [
     path("<int:session_id>/attendance/", views.attendance_management, name="attendance_management"),
     path("<int:session_id>/attendance/<int:participation_id>/<str:status>/", views.set_attendance_status, name="set_attendance_status"),
     path("<int:session_id>/attendance/bulk/", views.bulk_attendance_action, name="bulk_attendance_action"),
+    path("<int:session_id>/results/", views.match_results, name="match_results"),
 ]

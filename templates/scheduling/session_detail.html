@@ -104,6 +104,11 @@
               Manage Attendance
             </a>
           {% endif %}
+          {% if is_completed %}
+            <a class="btn btn-secondary" href="{% url 'match_results' session.id %}">
+              View Results
+            </a>
+          {% endif %}
 
           <a class="btn btn-outline" href="{% url 'session_list' %}">
             Back to Sessions

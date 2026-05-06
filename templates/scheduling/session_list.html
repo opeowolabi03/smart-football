@@ -215,6 +215,11 @@
                       <a class="icon-action" href="{% url 'session_detail' session.id %}" title="View details">
                         👁
                       </a>
+                    {% if session.status_label == "Completed" %}
+                      <a class="results-mini" href="{% url 'match_results' session.id %}">
+                        Results
+                      </a>
+                    {% endif %}
 
                       {% if user.is_authenticated %}
                         {% if session.user_joined %}
@@ -281,3 +286,5 @@
 </section>
 
 {% endblock %}
+
+
