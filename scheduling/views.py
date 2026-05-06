@@ -747,6 +747,55 @@ def _is_organiser_user(user):
     except Exception:
         return False
 
+def _can_manage_session(user, session):
+    """
+    Only the session creator or a staff user can manage attendance.
+    """
+    if not user.is_authenticated:
+        return False
+
+    if user == session.created_by:
+        return True
+
+    if user.is_staff:
+        return True
+
+    return False
+
+
+def _update_user_reliability(user):
+    """
+    Updates a player's reliability score based on their attendance history.
+    reliability_score is expected to be between 0.0 and 1.0.
+    """
+    joined_count = Participation.objects.filter(user=user).count()
+    attended_count = Participation.objects.filter(user=user, attended=True).count()
+
+    if joined_count > 0:
+        reliability = attended_count / joined_count
+    else:
+        reliability = 0.0
+
+    try:
+        profile = user.profile
+        profile.reliability_score = float(reliability)
+        profile.save(update_fields=["reliability_score"])
+    except Exception:
+        pass
+
+
+def _attendance_status_label(participation):
+    if participation.attended:
+        return "Attended"
+
+    return "Not marked"
+
+
+def _attendance_status_class(participation):
+    if participation.attended:
+        return "attended"
+
+    return "not-marked"
 
 def _choice_label(obj, field_name, default="Not set"):
     if obj is None:
@@ -1296,6 +1345,159 @@ def toggle_attendance(request, session_id, participation_id):
         profile.save(update_fields=["reliability_score"])
 
     return redirect("session_detail", session_id=session.id)
+
+@login_required
+def attendance_management(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if not _can_manage_session(request.user, session):
+        return HttpResponseForbidden("Only the organiser can manage attendance for this session.")
+
+    query = request.GET.get("q", "").strip()
+
+    all_participants = (
+        Participation.objects
+        .filter(session=session)
+        .select_related("user", "user__profile")
+        .order_by("user__username")
+    )
+
+    table_participants = all_participants
+
+    if query:
+        table_participants = table_participants.filter(
+            Q(user__username__icontains=query) |
+            Q(user__first_name__icontains=query) |
+            Q(user__last_name__icontains=query) |
+            Q(user__email__icontains=query)
+        )
+
+    team_assignments = TeamAssignment.objects.filter(session=session).select_related("user")
+
+    team_map = {
+        assignment.user_id: f"Team {assignment.team}"
+        for assignment in team_assignments
+    }
+
+    total_players = all_participants.count()
+    attended_count = all_participants.filter(attended=True).count()
+    not_marked_count = total_players - attended_count
+    attendance_percentage = _attendance_percentage(attended_count, total_players)
+
+    is_completed = session.start_datetime < timezone.now()
+
+    if is_completed:
+        status_label = "Completed"
+    elif total_players >= session.capacity:
+        status_label = "Full"
+    else:
+        status_label = "Upcoming"
+
+    participant_rows = []
+
+    for index, participation in enumerate(table_participants, start=1):
+        user = participation.user
+        display_name = user.get_full_name().strip() or user.username
+
+        try:
+            role = user.profile.get_role_display()
+        except Exception:
+            role = "Player"
+
+        if user == session.created_by:
+            role = "Organiser"
+
+        participant_rows.append({
+            "number": index,
+            "participation": participation,
+            "user": user,
+            "display_name": display_name,
+            "role": role,
+            "team": team_map.get(user.id, "Not allocated"),
+            "attendance_label": _attendance_status_label(participation),
+            "attendance_class": _attendance_status_class(participation),
+        })
+
+    return render(request, "scheduling/attendance_management.html", {
+        "session": session,
+        "query": query,
+        "participant_rows": participant_rows,
+
+        "total_players": total_players,
+        "attended_count": attended_count,
+        "not_marked_count": not_marked_count,
+        "attendance_percentage": attendance_percentage,
+        "status_label": status_label,
+    })
+
+
+@login_required
+def set_attendance_status(request, session_id, participation_id, status):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if request.method != "POST":
+        return redirect("attendance_management", session_id=session.id)
+
+    if not _can_manage_session(request.user, session):
+        return HttpResponseForbidden("Only the organiser can manage attendance for this session.")
+
+    participation = get_object_or_404(
+        Participation,
+        id=participation_id,
+        session=session,
+    )
+
+    if status == "attended":
+        participation.attended = True
+        message_text = f"{participation.user.username} marked as attended."
+    elif status == "not-attended":
+        participation.attended = False
+        message_text = f"{participation.user.username} marked as not attended."
+    else:
+        messages.error(request, "Invalid attendance status.")
+        return redirect("attendance_management", session_id=session.id)
+
+    participation.save(update_fields=["attended"])
+    _update_user_reliability(participation.user)
+
+    messages.success(request, message_text)
+    return redirect("attendance_management", session_id=session.id)
+
+
+@login_required
+def bulk_attendance_action(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if request.method != "POST":
+        return redirect("attendance_management", session_id=session.id)
+
+    if not _can_manage_session(request.user, session):
+        return HttpResponseForbidden("Only the organiser can manage attendance for this session.")
+
+    action = request.POST.get("action")
+
+    participants = Participation.objects.filter(session=session).select_related("user")
+
+    if action == "mark_all":
+        participants.update(attended=True)
+
+        for participation in participants:
+            _update_user_reliability(participation.user)
+
+        messages.success(request, "All players have been marked as attended.")
+
+    elif action == "reset":
+        participants.update(attended=False)
+
+        for participation in participants:
+            _update_user_reliability(participation.user)
+
+        messages.success(request, "Attendance has been reset.")
+
+    else:
+        messages.error(request, "Invalid bulk attendance action.")
+
+    return redirect("attendance_management", session_id=session.id)
 
 
 @login_required

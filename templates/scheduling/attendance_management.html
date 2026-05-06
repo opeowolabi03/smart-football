@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="dashboard-page">
+  <div class="dashboard-layout">
+
+    {% include "includes/sidebar.html" with active_page="sessions" sidebar_session_id=session.id %}
+
+    <div class="dashboard-main">
+
+      <div class="match-breadcrumb">
+        <a href="{% url 'session_list' %}">All Sessions</a>
+        <span>›</span>
+        <a href="{% url 'session_detail' session.id %}">Match Details</a>
+        <span>›</span>
+        <strong>Attendance</strong>
+      </div>
+
+      {% if messages %}
+        <div class="allocation-messages">
+          {% for message in messages %}
+            <div class="allocation-message allocation-message-{{ message.tags }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <section class="attendance-page-header">
+        <div>
+          <p class="eyebrow">Attendance</p>
+          <h1>Attendance Management</h1>
+          <p>Manage attendance for this match session.</p>
+        </div>
+
+        <a class="btn btn-outline attendance-header-btn" href="{% url 'session_detail' session.id %}">
+          Back to Match Details
+        </a>
+      </section>
+
+      <section class="attendance-session-card">
+        <div class="match-date-box">
+          <span>{{ session.start_datetime|date:"D" }}</span>
+          <strong>{{ session.start_datetime|date:"d" }}</strong>
+          <span>{{ session.start_datetime|date:"M" }}</span>
+        </div>
+
+        <div class="attendance-session-main">
+          <h2>{{ session.title }}</h2>
+
+          <div class="match-meta-row">
+            <span>🕒 {{ session.start_datetime|date:"D d M Y" }}, {{ session.start_datetime|time:"g:i A" }}</span>
+            <span>📍 {{ session.location }}</span>
+            <span>👥 {{ total_players }} / {{ session.capacity }} joined</span>
+          </div>
+
+          <p>
+            Use this page to mark players as attended or not attended for this session.
+          </p>
+        </div>
+
+        <div class="attendance-session-status">
+          <span>Status</span>
+
+          {% if status_label == "Completed" %}
+            <strong class="status-badge status-completed">Completed</strong>
+          {% elif status_label == "Full" %}
+            <strong class="status-badge status-full">Full</strong>
+          {% else %}
+            <strong class="status-badge status-upcoming">Upcoming</strong>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="attendance-stat-grid">
+        <article class="attendance-stat-card">
+          <span class="attendance-stat-icon attendance-blue">👥</span>
+          <div>
+            <p>Total Players</p>
+            <strong>{{ total_players }}</strong>
+          </div>
+        </article>
+
+        <article class="attendance-stat-card">
+          <span class="attendance-stat-icon attendance-green">✓</span>
+          <div>
+            <p>Attended</p>
+            <strong>{{ attended_count }}</strong>
+          </div>
+        </article>
+
+        <article class="attendance-stat-card">
+          <span class="attendance-stat-icon attendance-amber">?</span>
+          <div>
+            <p>Not Attended / Not Marked</p>
+            <strong>{{ not_marked_count }}</strong>
+          </div>
+        </article>
+
+        <article class="attendance-stat-card">
+          <span class="attendance-stat-icon attendance-purple">%</span>
+          <div>
+            <p>Attendance Percentage</p>
+            <strong>{{ attendance_percentage }}%</strong>
+          </div>
+        </article>
+      </section>
+
+      <section class="attendance-management-card">
+
+        <div class="attendance-toolbar">
+          <div class="attendance-bulk-actions">
+            <form method="post" action="{% url 'bulk_attendance_action' session.id %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="mark_all">
+              <button class="mini-outline-btn" type="submit">
+                ✓ Mark All Attended
+              </button>
+            </form>
+
+            <form method="post" action="{% url 'bulk_attendance_action' session.id %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="reset">
+              <button class="mini-outline-btn" type="submit">
+                ↻ Reset Attendance
+              </button>
+            </form>
+          </div>
+
+          <form class="attendance-search-form" method="get">
+            <input
+              class="form-input"
+              type="text"
+              name="q"
+              value="{{ query }}"
+              placeholder="Search players..."
+            >
+
+            <button class="mini-outline-btn" type="submit">
+              Filter
+            </button>
+
+            {% if query %}
+              <a class="mini-outline-btn clear-attendance-search" href="{% url 'attendance_management' session.id %}">
+                Clear
+              </a>
+            {% endif %}
+          </form>
+        </div>
+
+        <div class="attendance-table-wrap">
+          <table class="attendance-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player Name</th>
+                <th>Role</th>
+                <th>Team</th>
+                <th>Attendance Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {% for row in participant_rows %}
+                <tr>
+                  <td>{{ row.number }}</td>
+
+                  <td>
+                    <div class="participant-name">
+                      <span>👤</span>
+                      <strong>
+                        {{ row.display_name }}
+                        {% if row.user == user %}(You){% endif %}
+                      </strong>
+                    </div>
+                  </td>
+
+                  <td>
+                    {% if row.role == "Organiser" %}
+                      <span class="role-badge organiser-role">Organiser</span>
+                    {% else %}
+                      <span class="role-badge">Player</span>
+                    {% endif %}
+                  </td>
+
+                  <td>
+                    <strong class="team-text">{{ row.team }}</strong>
+                  </td>
+
+                  <td>
+                    {% if row.attendance_class == "attended" %}
+                      <span class="attendance-badge attendance-badge-attended">
+                        ✓ Attended
+                      </span>
+                    {% else %}
+                      <span class="attendance-badge attendance-badge-pending">
+                        ? Not marked
+                      </span>
+                    {% endif %}
+                  </td>
+
+                  <td>
+                    {% if row.participation.attended %}
+                      <form method="post" action="{% url 'set_attendance_status' session.id row.participation.id 'not-attended' %}">
+                        {% csrf_token %}
+                        <button class="attendance-action-btn" type="submit">
+                          Mark Not Attended
+                        </button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="{% url 'set_attendance_status' session.id row.participation.id 'attended' %}">
+                        {% csrf_token %}
+                        <button class="attendance-action-btn" type="submit">
+                          Mark Attended
+                        </button>
+                      </form>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="6">
+                    <div class="empty-state">
+                      <h3>No players found</h3>
+                      <p>No participants match your search.</p>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="attendance-bottom-link">
+        <a href="{% url 'session_detail' session.id %}">
+          ← Back to Match Details
+        </a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+{% endblock %}

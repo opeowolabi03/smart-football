@@ -99,6 +99,12 @@
             </a>
           {% endif %}
 
+          {% if is_organiser %}
+            <a class="btn btn-outline" href="{% url 'attendance_management' session.id %}">
+              Manage Attendance
+            </a>
+          {% endif %}
+
           <a class="btn btn-outline" href="{% url 'session_list' %}">
             Back to Sessions
           </a>
@@ -109,7 +115,11 @@
         <a class="active" href="#overview">Overview</a>
         <a href="#participants">Participants</a>
         <a href="#teams">Teams</a>
-        <a href="#attendance">Attendance</a>
+       {% if is_organiser %}
+          <a href="{% url 'attendance_management' session.id %}">Attendance</a>
+        {% else %}
+          <a href="#attendance">Attendance</a>
+        {% endif %}
       </div>
 
       <section class="match-detail-grid" id="overview">
