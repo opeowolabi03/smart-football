@@ -1,57 +1,384 @@
 {% extends "base.html" %}
+
 {% block content %}
 
-<h2>Organiser dashboard</h2>
+<section class="dashboard-page organiser-page">
+  <div class="dashboard-layout">
 
-<h3>Attendance overview</h3>
-<canvas id="attendanceChart" width="600" height="250"></canvas>
+    {% include "includes/sidebar.html" with active_page="dashboard" %}
 
-{{ labels|json_script:"chart-labels" }}
-{{ joined_data|json_script:"chart-joined" }}
-{{ attended_data|json_script:"chart-attended" }}
+    <div class="dashboard-main">
+
+      <section class="organiser-hero">
+        <div>
+          <p class="eyebrow">Organiser Dashboard</p>
+          <h1>Welcome back, {{ user.get_full_name|default:user.username }}!</h1>
+          <p>Here’s an overview of your matches, attendance, and players.</p>
+        </div>
+
+        <a class="btn btn-primary organiser-create-btn" href="{% url 'session_create' %}">
+          + Create New Match
+        </a>
+      </section>
+
+      <section class="organiser-stats-grid">
+        <article class="organiser-stat-card">
+          <span class="organiser-stat-icon">📅</span>
+          <div>
+            <p>Total Sessions</p>
+            <strong>{{ total_sessions }}</strong>
+            <small>All time sessions</small>
+          </div>
+        </article>
+
+        <article class="organiser-stat-card">
+          <span class="organiser-stat-icon blue-icon">👥</span>
+          <div>
+            <p>Total Players</p>
+            <strong>{{ total_joined }}</strong>
+            <small>Session sign-ups</small>
+          </div>
+        </article>
+
+        <article class="organiser-stat-card">
+          <span class="organiser-stat-icon success-icon">✅</span>
+          <div>
+            <p>Attendance Rate</p>
+            <strong>{{ attendance_rate }}%</strong>
+            <small>Average attendance</small>
+          </div>
+        </article>
+
+        <article class="organiser-stat-card">
+          <span class="organiser-stat-icon warning-icon">⭐</span>
+          <div>
+            <p>Average Rating</p>
+
+            {% if avg_rating %}
+              <strong>{{ avg_rating }} / 5</strong>
+              <small>From {{ rating_count }} rating{{ rating_count|pluralize }}</small>
+            {% else %}
+              <strong>N/A</strong>
+              <small>No ratings yet</small>
+            {% endif %}
+          </div>
+        </article>
+
+        <article class="organiser-stat-card">
+          <span class="organiser-stat-icon purple-icon">🧑‍🤝‍🧑</span>
+          <div>
+            <p>Upcoming Sessions</p>
+            <strong>{{ upcoming_count }}</strong>
+            <small>Scheduled sessions</small>
+          </div>
+        </article>
+      </section>
+
+      <section class="organiser-main-grid">
+
+        <div class="organiser-left-stack">
+
+          <section class="organiser-card chart-card">
+            <div class="organiser-card-heading">
+              <h2>Attendance Overview</h2>
+              <span>Last 6 sessions</span>
+            </div>
+
+            <div class="chart-wrapper">
+              <canvas id="attendanceChart"></canvas>
+            </div>
+
+            <div class="attendance-note">
+              Overall attendance rate for selected period: <strong>{{ attendance_rate }}%</strong>
+            </div>
+          </section>
+
+          <section class="organiser-card sessions-card">
+            <div class="organiser-card-heading">
+              <h2>Recent & Upcoming Sessions</h2>
+              <a href="{% url 'session_list' %}">View all</a>
+            </div>
+
+            <div class="organiser-table-wrap">
+              <table class="organiser-table">
+                <thead>
+                  <tr>
+                    <th>Session Title</th>
+                    <th>Date & Time</th>
+                    <th>Location</th>
+                    <th>Capacity</th>
+                    <th>Joined</th>
+                    <th>Attended</th>
+                    <th>Attendance %</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {% for session in recent_sessions %}
+                    <tr>
+                      <td>
+                        <a class="session-title-link" href="{% url 'session_detail' session.id %}">
+                          {{ session.title }}
+                        </a>
+                      </td>
+
+                      <td>
+                        <strong>{{ session.start_datetime|date:"d M Y" }}</strong>
+                        <small>{{ session.start_datetime|time:"g:i A" }}</small>
+                      </td>
+
+                      <td>{{ session.location }}</td>
+                      <td>{{ session.capacity }}</td>
+                      <td>{{ session.participant_count }}</td>
+                      <td>{{ session.attended_count }}</td>
+
+                      <td>
+                        {% if session.attendance_rate != None %}
+                          <div class="attendance-mini">
+                            <span>{{ session.attendance_rate }}%</span>
+                            <div class="attendance-bar">
+                              <div style="{{ session.attendance_style }}"></div>
+                            </div>
+                          </div>
+                        {% else %}
+                          <span class="muted-dash">-</span>
+                        {% endif %}
+                      </td>
+
+                      <td>
+                        {% if session.status_label == "Full" %}
+                          <span class="status-badge status-full">Full</span>
+                        {% elif session.status_label == "Completed" %}
+                          <span class="status-badge status-completed">Completed</span>
+                        {% else %}
+                          <span class="status-badge status-upcoming">Upcoming</span>
+                        {% endif %}
+                      </td>
+
+                      <td>
+                        <div class="table-actions">
+                          <a class="icon-action" href="{% url 'session_detail' session.id %}" title="View session">
+                            👁
+                          </a>
+
+                          <form method="post" action="{% url 'generate_teams' session.id %}">
+                            {% csrf_token %}
+                            <button class="icon-action icon-button" type="submit" title="Generate teams">
+                              ⚽
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  {% empty %}
+                    <tr>
+                      <td colspan="9">
+                        <div class="empty-state">
+                          <h3>No sessions created yet</h3>
+                          <p>Create your first match to start tracking players and attendance.</p>
+                          <a class="btn btn-secondary btn-small" href="{% url 'session_create' %}">
+                            Create Match
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="view-all-row">
+              <a href="{% url 'session_list' %}">View All Sessions →</a>
+            </div>
+          </section>
+
+        </div>
+
+        <aside class="organiser-right-stack">
+
+          <section class="organiser-card status-card">
+            <h2>Session Status</h2>
+
+            <div class="doughnut-wrapper">
+              <canvas id="statusChart"></canvas>
+            </div>
+
+            <a class="btn btn-outline status-card-btn" href="{% url 'session_list' %}">
+              View All Sessions →
+            </a>
+          </section>
+
+          <section class="organiser-card alerts-card">
+            <h2>Alerts</h2>
+
+            <div class="alert-list">
+              <div class="alert-item warning-alert">
+                <span>⚠️</span>
+                <div>
+                  <strong>Low attendance</strong>
+                  <p>{{ low_attendance_count }} session{{ low_attendance_count|pluralize }} below 60%</p>
+                </div>
+              </div>
+
+              <div class="alert-item error-alert">
+                <span>🔒</span>
+                <div>
+                  <strong>Session full</strong>
+                  <p>{{ full_count }} session{{ full_count|pluralize }} at full capacity</p>
+                </div>
+              </div>
+
+              <div class="alert-item info-alert">
+                <span>📅</span>
+                <div>
+                  <strong>Upcoming sessions</strong>
+                  <p>{{ upcoming_count }} session{{ upcoming_count|pluralize }} scheduled</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="organiser-card top-players-card">
+            <h2>Top Players by Attendance</h2>
+
+            <ol class="top-player-list">
+              {% for player in top_player_rows %}
+                <li>
+                  <span>{{ player.username }}</span>
+                  <strong>{{ player.attendance_rate }}%</strong>
+                </li>
+              {% empty %}
+                <li>
+                  <span>No player data yet</span>
+                  <strong>-</strong>
+                </li>
+              {% endfor %}
+            </ol>
+          </section>
+
+          <section class="organiser-card quick-actions-card organiser-quick-card">
+            <h2>Quick Actions</h2>
+
+            <div class="quick-actions">
+              <a class="quick-action" href="{% url 'session_create' %}">
+                <span>📅 Create New Match</span>
+                <strong>›</strong>
+              </a>
+
+              <a class="quick-action" href="{% url 'session_list' %}">
+                <span>👥 Manage Sessions</span>
+                <strong>›</strong>
+              </a>
+
+              <a class="quick-action" href="{% url 'session_list' %}">
+                <span>🧩 Generate Teams</span>
+                <strong>›</strong>
+              </a>
+
+              <a class="quick-action" href="{% url 'session_list' %}">
+                <span>📈 View Reports</span>
+                <strong>›</strong>
+              </a>
+            </div>
+          </section>
+
+        </aside>
+      </section>
+
+    </div>
+  </div>
+</section>
+
+{{ chart_labels|json_script:"organiser-chart-labels" }}
+{{ joined_data|json_script:"organiser-chart-joined" }}
+{{ attended_data|json_script:"organiser-chart-attended" }}
+{{ status_labels|json_script:"organiser-status-labels" }}
+{{ status_data|json_script:"organiser-status-data" }}
 
 <script>
-  const chartLabels = JSON.parse(document.getElementById("chart-labels").textContent);
-  const joinedSeries = JSON.parse(document.getElementById("chart-joined").textContent);
-  const attendedSeries = JSON.parse(document.getElementById("chart-attended").textContent);
+  const chartLabels = JSON.parse(document.getElementById("organiser-chart-labels").textContent);
+  const joinedData = JSON.parse(document.getElementById("organiser-chart-joined").textContent);
+  const attendedData = JSON.parse(document.getElementById("organiser-chart-attended").textContent);
 
-  const ctx = document.getElementById("attendanceChart");
-  new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: chartLabels,
-      datasets: [
-        { label: "Joined", data: joinedSeries },
-        { label: "Attended", data: attendedSeries }
-      ]
-    }
-  });
+  const statusLabels = JSON.parse(document.getElementById("organiser-status-labels").textContent);
+  const statusData = JSON.parse(document.getElementById("organiser-status-data").textContent);
+
+  const attendanceCanvas = document.getElementById("attendanceChart");
+
+  if (attendanceCanvas) {
+    new Chart(attendanceCanvas, {
+      type: "bar",
+      data: {
+        labels: chartLabels,
+        datasets: [
+          {
+            label: "Joined",
+            data: joinedData,
+            backgroundColor: "#0B6E4F",
+            borderRadius: 8
+          },
+          {
+            label: "Attended",
+            data: attendedData,
+            backgroundColor: "#A3C985",
+            borderRadius: 8
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "top"
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0
+            }
+          }
+        }
+      }
+    });
+  }
+
+  const statusCanvas = document.getElementById("statusChart");
+
+  if (statusCanvas) {
+    new Chart(statusCanvas, {
+      type: "doughnut",
+      data: {
+        labels: statusLabels,
+        datasets: [
+          {
+            data: statusData,
+            backgroundColor: [
+              "#16A34A",
+              "#F59E0B",
+              "#DC2626",
+              "#6B7280"
+            ],
+            borderWidth: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "62%",
+        plugins: {
+          legend: {
+            position: "bottom"
+          }
+        }
+      }
+    });
+  }
 </script>
-
-<hr>
-
-{% if sessions %}
-  <table border="1" cellpadding="6">
-    <tr>
-      <th>Session</th>
-      <th>Date/Time</th>
-      <th>Capacity</th>
-      <th>Joined</th>
-      <th>Attended</th>
-    </tr>
-
-    {% for s in sessions %}
-      <tr>
-        <td><a href="{% url 'session_detail' s.id %}">{{ s.title }}</a></td>
-        <td>{{ s.start_datetime }}</td>
-        <td>{{ s.capacity }}</td>
-        <td>{{ s.participant_count }}</td>
-        <td>{{ s.attended_count }}</td>
-      </tr>
-    {% endfor %}
-  </table>
-{% else %}
-  <p>You haven’t created any sessions yet.</p>
-{% endif %}
 
 {% endblock %}

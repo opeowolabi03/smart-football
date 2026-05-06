@@ -730,25 +730,153 @@ def organiser_dashboard(request):
     if not _is_organiser_user(request.user):
         return HttpResponseForbidden("Only organisers can access this dashboard.")
 
-    sessions = (
+    sessions_qs = (
         MatchSession.objects
         .filter(created_by=request.user)
         .annotate(
             participant_count=Count("participants"),
             attended_count=Count("participants", filter=Q(participants__attended=True)),
         )
-        .order_by("start_datetime")
+        .order_by("-start_datetime")
     )
 
-    labels = [session.start_datetime.strftime("%d %b") for session in sessions]
-    joined_data = [session.participant_count for session in sessions]
-    attended_data = [session.attended_count for session in sessions]
+    sessions = list(sessions_qs)
+
+    total_sessions = len(sessions)
+    total_joined = sum(session.participant_count for session in sessions)
+    total_attended = sum(session.attended_count for session in sessions)
+
+    if total_joined > 0:
+        attendance_rate = round((total_attended / total_joined) * 100)
+    else:
+        attendance_rate = 0
+
+    average_rating = Rating.objects.filter(session__in=sessions).aggregate(
+        average=Avg("score"),
+        count=Count("id"),
+    )
+
+    avg_rating = average_rating["average"]
+    rating_count = average_rating["count"]
+
+    if avg_rating is not None:
+        avg_rating = round(avg_rating, 1)
+
+    now = timezone.now()
+
+    upcoming_count = sum(
+        1 for session in sessions
+        if session.start_datetime >= now
+    )
+
+    completed_count = sum(
+        1 for session in sessions
+        if session.start_datetime < now
+    )
+
+    full_count = sum(
+        1 for session in sessions
+        if session.participant_count >= session.capacity
+    )
+
+    low_attendance_count = 0
+
+    for session in sessions:
+        if session.participant_count > 0:
+            session.attendance_rate = round((session.attended_count / session.participant_count) * 100)
+            session.attendance_style = f"width: {session.attendance_rate}%;"
+        else:
+            session.attendance_rate = None
+            session.attendance_style = "width: 0%;"
+
+        session.is_full = session.participant_count >= session.capacity
+
+        if session.start_datetime < now:
+            session.status_label = "Completed"
+        elif session.is_full:
+            session.status_label = "Full"
+        else:
+            session.status_label = "Upcoming"
+
+        if session.attendance_rate is not None and session.attendance_rate < 60:
+            low_attendance_count += 1
+
+    chart_sessions = sorted(sessions, key=lambda session: session.start_datetime)[-6:]
+
+    chart_labels = [
+        session.start_datetime.strftime("%d %b")
+        for session in chart_sessions
+    ]
+
+    joined_data = [
+        session.participant_count
+        for session in chart_sessions
+    ]
+
+    attended_data = [
+        session.attended_count
+        for session in chart_sessions
+    ]
+
+    status_labels = ["Completed", "Upcoming", "Low Attendance", "Full"]
+    status_data = [completed_count, upcoming_count, low_attendance_count, full_count]
+
+    top_player_rows = []
+
+    player_stats = (
+        Participation.objects
+        .filter(session__in=sessions)
+        .values("user__username")
+        .annotate(
+            joined_count=Count("id"),
+            attended_count=Count("id", filter=Q(attended=True)),
+        )
+    )
+
+    for player in player_stats:
+        joined_count = player["joined_count"]
+        attended_count = player["attended_count"]
+
+        if joined_count > 0:
+            player_rate = round((attended_count / joined_count) * 100)
+        else:
+            player_rate = 0
+
+        top_player_rows.append({
+            "username": player["user__username"],
+            "attendance_rate": player_rate,
+        })
+
+    top_player_rows = sorted(
+        top_player_rows,
+        key=lambda player: player["attendance_rate"],
+        reverse=True,
+    )[:5]
+
+    recent_sessions = sessions[:5]
 
     return render(request, "scheduling/organiser_dashboard.html", {
         "sessions": sessions,
-        "labels": labels,
+        "recent_sessions": recent_sessions,
+
+        "total_sessions": total_sessions,
+        "total_joined": total_joined,
+        "attendance_rate": attendance_rate,
+        "avg_rating": avg_rating,
+        "rating_count": rating_count,
+        "upcoming_count": upcoming_count,
+        "completed_count": completed_count,
+        "full_count": full_count,
+        "low_attendance_count": low_attendance_count,
+
+        "chart_labels": chart_labels,
         "joined_data": joined_data,
         "attended_data": attended_data,
+
+        "status_labels": status_labels,
+        "status_data": status_data,
+
+        "top_player_rows": top_player_rows,
         "is_organiser": True,
     })
 

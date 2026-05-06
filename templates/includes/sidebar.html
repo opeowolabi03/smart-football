@@ -1,0 +1,44 @@
+<aside class="dashboard-sidebar">
+  <div class="sidebar-title">
+    <span>⚽</span>
+    <strong>Smart Football</strong>
+  </div>
+
+  <nav class="sidebar-nav">
+
+    {% if global_is_organiser %}
+      <a class="sidebar-link {% if active_page == 'dashboard' %}active{% endif %}" href="{% url 'organiser_dashboard' %}">
+        <span>🏠</span>
+        Dashboard
+      </a>
+    {% else %}
+      <a class="sidebar-link {% if active_page == 'dashboard' %}active{% endif %}" href="{% url 'player_dashboard' %}">
+        <span>🏠</span>
+        Dashboard
+      </a>
+    {% endif %}
+
+    <a class="sidebar-link {% if active_page == 'sessions' %}active{% endif %}" href="{% url 'session_list' %}">
+      <span>📅</span>
+      All Sessions
+    </a>
+
+    {% if global_is_organiser %}
+      <a class="sidebar-link {% if active_page == 'create_match' %}active{% endif %}" href="{% url 'session_create' %}">
+        <span>➕</span>
+        Create Match
+      </a>
+    {% endif %}
+
+    <a class="sidebar-link {% if active_page == 'profile' %}active{% endif %}" href="{% url 'edit_profile' %}">
+      <span>👤</span>
+      My Profile
+    </a>
+
+    <span class="sidebar-link sidebar-muted">
+      <span>💬</span>
+      Messages
+    </span>
+
+  </nav>
+</aside>

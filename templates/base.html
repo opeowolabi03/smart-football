@@ -13,24 +13,40 @@
 
 <body>
   <header class="site-header">
-    <a class="brand" href="{% url 'player_dashboard' %}">
-      <span class="brand-mark">⚽</span>
-      <span>Smart Football</span>
-    </a>
+    {% if user.is_authenticated and global_is_organiser %}
+      <a class="brand" href="{% url 'organiser_dashboard' %}">
+        <span class="brand-mark">⚽</span>
+        <span>Smart Football</span>
+      </a>
+    {% else %}
+      <a class="brand" href="{% url 'player_dashboard' %}">
+        <span class="brand-mark">⚽</span>
+        <span>Smart Football</span>
+      </a>
+    {% endif %}
 
     <nav class="site-nav">
       {% if user.is_authenticated %}
-        <a href="{% url 'player_dashboard' %}">Dashboard</a>
-        <a href="{% url 'session_list' %}">All Sessions</a>
-        <a href="{% url 'edit_profile' %}">Profile</a>
-        {% if user.is_staff or user.profile.role == "organiser" %}
-          <a href="{% url 'organiser_dashboard' %}">Organiser</a>
+
+        {% if global_is_organiser %}
+          <a href="{% url 'organiser_dashboard' %}">Dashboard</a>
+        {% else %}
+          <a href="{% url 'player_dashboard' %}">Dashboard</a>
         {% endif %}
+
+        <a href="{% url 'session_list' %}">All Sessions</a>
+
+        {% if global_is_organiser %}
+          <a href="{% url 'session_create' %}">Create Match</a>
+        {% endif %}
+
+        <a href="{% url 'edit_profile' %}">Profile</a>
 
         <form class="logout-form" method="post" action="{% url 'logout' %}">
           {% csrf_token %}
           <button class="nav-button" type="submit">Logout</button>
         </form>
+
       {% else %}
         <a href="{% url 'login' %}">Login</a>
         <a href="{% url 'signup' %}">Sign Up</a>

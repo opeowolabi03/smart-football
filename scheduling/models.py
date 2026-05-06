@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -50,8 +50,12 @@ class Rating(models.Model):
         on_delete=models.CASCADE,
         related_name="ratings_received",
     )
-
-    score = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    score = models.PositiveIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(5),
+        ]
+    )
     comment = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -59,12 +63,13 @@ class Rating(models.Model):
         unique_together = ("session", "rater", "ratee")
 
     def __str__(self):
-        return f"{self.session_id}: {self.rater_id} -> {self.ratee_id} ({self.score})"
+        return f"{self.session.title}: {self.rater.username} rated {self.ratee.username} {self.score}/5"
 
 
 class TeamAssignment(models.Model):
     TEAM_A = "A"
     TEAM_B = "B"
+
     TEAM_CHOICES = [
         (TEAM_A, "Team A"),
         (TEAM_B, "Team B"),

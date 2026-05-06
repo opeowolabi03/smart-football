@@ -5,39 +5,7 @@
 <section class="dashboard-page">
   <div class="dashboard-layout">
 
-    <aside class="dashboard-sidebar">
-      <div class="sidebar-title">
-        <span>⚽</span>
-        <strong>Smart Football</strong>
-      </div>
-
-      <nav class="sidebar-nav">
-        <a class="sidebar-link" href="{% url 'player_dashboard' %}">
-          <span>🏠</span>
-          Dashboard
-        </a>
-
-        <a class="sidebar-link active" href="{% url 'session_list' %}">
-          <span>📅</span>
-          All Sessions
-        </a>
-
-        <a class="sidebar-link" href="{% url 'edit_profile' %}">
-          <span>👤</span>
-          My Profile
-        </a>
-
-        <a class="sidebar-link" href="{% url 'organiser_dashboard' %}">
-          <span>📊</span>
-          Organiser Dashboard
-        </a>
-
-        <span class="sidebar-link sidebar-muted">
-          <span>💬</span>
-          Messages
-        </span>
-      </nav>
-    </aside>
+    {% include "includes/sidebar.html" with active_page="sessions" %}
 
     <div class="dashboard-main">
 
