@@ -11,6 +11,7 @@ from django.db.models import Avg, Count, Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from .ml_team_allocator import allocate_teams_ml, calculate_player_strength
 
 from .forms import RatingForm
 from .models import (
@@ -188,42 +189,8 @@ def _reliability_score(user):
 
     return max(1.0, reliability * 5)
 
-
 def _profile_score(user):
-    """
-    Final player strength score used by Smart Football.
-
-    Score uses:
-    - skill level
-    - fitness level
-    - experience
-    - peer ratings
-    - attendance reliability
-
-    This supports the dissertation claim that team allocation uses
-    player information and feedback.
-    """
-    profile = _get_user_profile(user)
-
-    if not profile:
-        return 3.0
-
-    skill = _clamp_number(getattr(profile, "skill_level", 3), 1, 5, default=3)
-    fitness = _clamp_number(getattr(profile, "fitness_level", 3), 1, 5, default=3)
-    experience = _experience_score(profile)
-    peer_rating = _peer_rating_score(user)
-    reliability = _reliability_score(user)
-
-    final_score = (
-        (skill * 0.30) +
-        (fitness * 0.20) +
-        (experience * 0.15) +
-        (peer_rating * 0.25) +
-        (reliability * 0.10)
-    )
-
-    return round(final_score, 2)
-
+    return calculate_player_strength(user)
 
 def _team_fairness_score(team_a_total, team_b_total):
     """
@@ -1059,61 +1026,38 @@ def generate_teams(request, session_id):
         messages.error(request, "At least 2 players are needed to generate teams.")
         return redirect("session_detail", session_id=session.id)
 
-    player_scores = []
-
-    for participation in participants:
-        user = participation.user
-        score = _profile_score(user)
-
-        player_scores.append({
-            "user": user,
-            "score": score,
-        })
-
-    # Highest strength players are allocated first.
-    player_scores.sort(key=lambda player: player["score"], reverse=True)
-
-    team_a = []
-    team_b = []
-    team_a_total = 0.0
-    team_b_total = 0.0
-
-    for player in player_scores:
-        # Greedy balancing:
-        # place the next player into the currently weaker team.
-        if team_a_total <= team_b_total:
-            team_a.append(player)
-            team_a_total += player["score"]
-        else:
-            team_b.append(player)
-            team_b_total += player["score"]
+    allocation = allocate_teams_ml(participants)
 
     with transaction.atomic():
         TeamAssignment.objects.filter(session=session).delete()
 
-        for player in team_a:
+        for player in allocation["team_a"]:
             TeamAssignment.objects.create(
                 session=session,
                 user=player["user"],
                 team=TeamAssignment.TEAM_A,
             )
 
-        for player in team_b:
+        for player in allocation["team_b"]:
             TeamAssignment.objects.create(
                 session=session,
                 user=player["user"],
                 team=TeamAssignment.TEAM_B,
             )
 
-    fairness_score = _team_fairness_score(team_a_total, team_b_total)
-    difference = round(abs(team_a_total - team_b_total), 2)
-
-    messages.success(
-        request,
-        f"Teams generated. Fairness score: {fairness_score}%. Team difference: {difference}."
-    )
+    if allocation["used_ml"]:
+        messages.success(
+            request,
+            f"Teams generated using ML-assisted clustering. Fairness score: {allocation['fairness_score']}%."
+        )
+    else:
+        messages.warning(
+            request,
+            f"Teams generated using fallback balancing. Fairness score: {allocation['fairness_score']}%. {allocation['ml_reason']}"
+        )
 
     return redirect("session_detail", session_id=session.id)
+
 
 @login_required
 def team_allocation(request, session_id):
