@@ -28,6 +28,12 @@
             ← Back to Match Details
           </a>
 
+          {% if can_edit_result %}
+            <a class="btn btn-secondary results-top-btn" href="{% url 'edit_match_result' session.id %}">
+              Edit Result
+            </a>
+          {% endif %}
+          
           <a class="btn btn-outline results-top-btn" href="{% url 'rate_session' session.id %}">
             ☆ Rate Session
           </a>

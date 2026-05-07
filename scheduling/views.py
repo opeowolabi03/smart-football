@@ -18,7 +18,7 @@ from .ml_team_allocator import (
     attendance_reliability_score,
 )
 
-from .forms import RatingForm
+from .forms import MatchResultForm, RatingForm
 from .models import (
     MatchSession,
     Participation,
@@ -1352,6 +1352,53 @@ def _calculate_result_fairness(team_a_users, team_b_users):
     return fairness_score, fairness_label, difference
 
 @login_required
+def edit_match_result(request, session_id):
+    session = get_object_or_404(MatchSession, id=session_id)
+
+    if not _can_manage_session(request.user, session):
+        return HttpResponseForbidden("Only the organiser can enter or edit match results.")
+
+    if session.start_datetime > timezone.now():
+        messages.warning(
+            request,
+            "You can only enter results after the match has been completed."
+        )
+        return redirect("session_detail", session_id=session.id)
+
+    result, created = MatchResult.objects.get_or_create(session=session)
+
+    if request.method == "POST":
+        form = MatchResultForm(
+            request.POST,
+            instance=result,
+            session=session,
+        )
+
+        if form.is_valid():
+            form.save()
+
+            messages.success(
+                request,
+                "Match result saved successfully."
+            )
+
+            return redirect("match_results", session_id=session.id)
+
+    else:
+        form = MatchResultForm(
+            instance=result,
+            session=session,
+        )
+
+    return render(request, "scheduling/edit_match_result.html", {
+        "session": session,
+        "result": result,
+        "form": form,
+        "sidebar_session_id": session.id,
+    })
+
+
+@login_required
 def match_results(request, session_id):
     session = get_object_or_404(MatchSession, id=session_id)
 
@@ -1520,6 +1567,8 @@ def match_results(request, session_id):
 
         "total_goals": total_goals,
         "top_scorer": top_scorer,
+
+        "can_edit_result": _can_manage_session(request.user, session),
     })
 
 
