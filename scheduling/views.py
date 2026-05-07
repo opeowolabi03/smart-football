@@ -11,7 +11,12 @@ from django.db.models import Avg, Count, Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from .ml_team_allocator import allocate_teams_ml, calculate_player_strength
+from .ml_team_allocator import (
+    allocate_teams_ml,
+    calculate_player_strength,
+    peer_rating_score,
+    attendance_reliability_score,
+)
 
 from .forms import RatingForm
 from .models import (
@@ -709,17 +714,7 @@ def session_detail(request, session_id):
         "average_session_rating": average_session_rating,
     })
 
-def _is_organiser_user(user):
-    if not user.is_authenticated:
-        return False
-
-    if user.is_staff:
-        return True
-
-    try:
-        return str(user.profile.role).lower() == "organiser"
-    except Exception:
-        return False
+# ===== ATTENDANCE + ML TEAM ALLOCATION HELPERS =====
 
 def _can_manage_session(user, session):
     """
@@ -739,7 +734,7 @@ def _can_manage_session(user, session):
 
 def _update_user_reliability(user):
     """
-    Updates a player's reliability score based on their attendance history.
+    Updates a player's reliability score based on attendance history.
     reliability_score is expected to be between 0.0 and 1.0.
     """
     joined_count = Participation.objects.filter(user=user).count()
@@ -771,114 +766,139 @@ def _attendance_status_class(participation):
 
     return "not-marked"
 
-def _choice_label(obj, field_name, default="Not set"):
-    if obj is None:
-        return default
 
-    display_method = getattr(obj, f"get_{field_name}_display", None)
+def _safe_profile(user):
+    try:
+        return user.profile
+    except Exception:
+        return None
+
+
+def _normalise_rating_to_five(value):
+    """
+    Converts old 1-10 values or newer 1-5 values into a safe 1-5 value.
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = 3.0
+
+    value = max(1.0, min(value, 10.0))
+
+    if value > 5:
+        value = value / 2
+
+    return max(1.0, min(value, 5.0))
+
+
+def _score_to_percent(value):
+    """
+    Converts a 1-5 score to a 0-100 percentage for radar charts.
+    """
+    value = _normalise_rating_to_five(value)
+    return round((value / 5) * 100)
+
+
+def _allocation_position_label(user):
+    profile = _safe_profile(user)
+
+    if not profile:
+        return "Any"
+
+    display_method = getattr(profile, "get_position_preference_display", None)
 
     if callable(display_method):
         return display_method()
 
-    value = getattr(obj, field_name, default)
+    value = str(getattr(profile, "position_preference", "ANY")).upper()
 
-    label_map = {
-        "ANY": "Any",
-        "any": "Any",
+    position_map = {
         "GK": "Goalkeeper",
-        "gk": "Goalkeeper",
         "DEF": "Defender",
-        "def": "Defender",
         "MID": "Midfielder",
-        "mid": "Midfielder",
         "FWD": "Forward",
-        "fwd": "Forward",
-        "beginner": "Beginner",
-        "intermediate": "Intermediate",
-        "advanced": "Advanced",
+        "ANY": "Any",
     }
 
-    return label_map.get(str(value), str(value).replace("_", " ").title())
+    return position_map.get(value, value.title())
 
 
-def _experience_score(profile):
+def _allocation_experience_label(user):
+    profile = _safe_profile(user)
+
     if not profile:
-        return 1
+        return "Not set"
 
-    if hasattr(profile, "experience_weight"):
-        try:
-            return profile.experience_weight()
-        except Exception:
-            pass
+    display_method = getattr(profile, "get_experience_display", None)
 
-    experience = str(getattr(profile, "experience", "")).lower()
+    if callable(display_method):
+        return display_method()
 
-    scores = {
-        "beginner": 1,
-        "intermediate": 2,
-        "advanced": 3,
+    value = str(getattr(profile, "experience", "not_set")).replace("_", " ")
+
+    return value.title()
+
+
+def _allocation_experience_percent(user):
+    profile = _safe_profile(user)
+
+    if not profile:
+        return 35
+
+    value = str(getattr(profile, "experience", "")).lower()
+
+    experience_scores = {
+        "beginner": 35,
+        "intermediate": 70,
+        "advanced": 100,
     }
 
-    return scores.get(experience, 1)
-
-
-def _average_received_rating(user):
-    average = Rating.objects.filter(ratee=user).aggregate(
-        average=Avg("score")
-    )["average"]
-
-    if average is None:
-        return 3.0
-
-    return float(average)
-
-
-def _player_allocation_score(user):
-    try:
-        profile = user.profile
-    except Exception:
-        profile = None
-
-    if not profile:
-        return 0.0
-
-    skill = float(getattr(profile, "skill_level", 0) or 0)
-    fitness = float(getattr(profile, "fitness_level", 0) or 0)
-    peer_rating = _average_received_rating(user)
-    experience = float(_experience_score(profile))
-
-    # Weighted score. Easy to explain in your demo without summoning maths demons.
-    score = (
-        (skill * 0.40) +
-        (fitness * 0.25) +
-        (peer_rating * 0.25) +
-        (experience * 0.10)
-    )
-
-    return round(score, 1)
-
-
-def _player_position(user):
-    try:
-        return _choice_label(user.profile, "position_preference", "Any")
-    except Exception:
-        return "Any"
+    return experience_scores.get(value, 35)
 
 
 def _build_player_row(user):
-    try:
-        profile = user.profile
-    except Exception:
-        profile = None
+    """
+    Builds one row for the Team Allocation page.
+
+    This now uses calculate_player_strength(), which is the same scoring used by
+    the ML-assisted allocator.
+    """
+    profile = _safe_profile(user)
+
+    raw_skill = getattr(profile, "skill_level", 3) if profile else 3
+    raw_fitness = getattr(profile, "fitness_level", 3) if profile else 3
+
+    skill = _normalise_rating_to_five(raw_skill)
+    fitness = _normalise_rating_to_five(raw_fitness)
+
+    peer_rating = peer_rating_score(user)
+    reliability = attendance_reliability_score(user)
+    final_score = calculate_player_strength(user)
+
+    display_name = user.get_full_name().strip() or user.username
 
     return {
         "user": user,
-        "username": user.get_full_name().strip() or user.username,
-        "position": _player_position(user),
-        "score": _player_allocation_score(user),
-        "skill": getattr(profile, "skill_level", 0) if profile else 0,
-        "fitness": getattr(profile, "fitness_level", 0) if profile else 0,
-        "experience": _choice_label(profile, "experience", "Not set"),
+        "username": user.username,
+        "name": display_name,
+
+        "position": _allocation_position_label(user),
+        "experience": _allocation_experience_label(user),
+
+        "skill": round(skill, 2),
+        "fitness": round(fitness, 2),
+        "skill_percent": _score_to_percent(skill),
+        "fitness_percent": _score_to_percent(fitness),
+
+        "peer_rating": round(peer_rating, 2),
+        "peer_rating_percent": _score_to_percent(peer_rating),
+
+        "reliability": round(reliability, 2),
+        "reliability_percent": _score_to_percent(reliability),
+
+        "experience_percent": _allocation_experience_percent(user),
+
+        "score": round(final_score, 2),
     }
 
 
@@ -887,6 +907,7 @@ def _team_metric_average(rows, key):
         return 0
 
     total = sum(float(row.get(key, 0) or 0) for row in rows)
+
     return round(total / len(rows), 1)
 
 
@@ -897,42 +918,53 @@ def _position_balance_score(rows):
     positions = [
         str(row.get("position", "Any")).lower()
         for row in rows
+        if str(row.get("position", "Any")).lower() != "any"
     ]
 
-    unique_positions = len(set(positions))
-    total_positions = len(positions)
+    if not positions:
+        return 50
 
-    return round((unique_positions / total_positions) * 100)
+    unique_positions = len(set(positions))
+
+    return round(min(unique_positions, 4) / 4 * 100)
 
 
 def _team_radar_data(rows):
+    """
+    Returns radar chart values out of 100:
+    - Skill Level
+    - Position Balance
+    - Fitness Level
+    - Experience
+    - Recent Form
+    """
     if not rows:
         return [0, 0, 0, 0, 0]
 
-    avg_skill = _team_metric_average(rows, "skill") * 20
-    avg_fitness = _team_metric_average(rows, "fitness") * 20
+    average_skill = round(
+        sum(row["skill_percent"] for row in rows) / len(rows)
+    )
+
+    average_fitness = round(
+        sum(row["fitness_percent"] for row in rows) / len(rows)
+    )
+
+    average_experience = round(
+        sum(row["experience_percent"] for row in rows) / len(rows)
+    )
+
+    average_recent_form = round(
+        sum(row["peer_rating_percent"] for row in rows) / len(rows)
+    )
+
     position_balance = _position_balance_score(rows)
 
-    experience_scores = []
-    for row in rows:
-        exp = str(row.get("experience", "")).lower()
-
-        if "advanced" in exp:
-            experience_scores.append(100)
-        elif "intermediate" in exp:
-            experience_scores.append(66)
-        else:
-            experience_scores.append(33)
-
-    avg_experience = round(sum(experience_scores) / len(experience_scores)) if experience_scores else 0
-    avg_score = _team_metric_average(rows, "score") * 20
-
     return [
-        round(avg_skill),
-        round(position_balance),
-        round(avg_fitness),
-        round(avg_experience),
-        round(avg_score),
+        average_skill,
+        position_balance,
+        average_fitness,
+        average_experience,
+        average_recent_form,
     ]
 
 
@@ -940,70 +972,38 @@ def _fairness_score(team_a_total, team_b_total):
     if team_a_total <= 0 and team_b_total <= 0:
         return 0
 
-    biggest = max(team_a_total, team_b_total)
-
-    if biggest <= 0:
-        return 0
-
+    biggest = max(team_a_total, team_b_total, 1)
     difference = abs(team_a_total - team_b_total)
+
     score = 100 - ((difference / biggest) * 100)
 
-    return max(0, round(score))
+    return max(0, min(round(score), 100))
 
 
-def _generate_balanced_assignments(session):
-    participants = (
-        Participation.objects
-        .filter(session=session)
-        .select_related("user", "user__profile")
-        .order_by("user__username")
-    )
+def _allocation_fairness_label(score):
+    if score >= 90:
+        return "Fair"
 
-    if participants.count() < 2:
-        return False
+    if score >= 75:
+        return "Mostly Fair"
 
-    player_scores = []
+    if score >= 60:
+        return "Acceptable"
 
-    for participation in participants:
-        user = participation.user
-        score = _player_allocation_score(user)
-        player_scores.append((user, score))
-
-    player_scores.sort(key=lambda item: item[1], reverse=True)
-
-    team_a = []
-    team_b = []
-    team_a_total = 0.0
-    team_b_total = 0.0
-
-    for user, score in player_scores:
-        if team_a_total <= team_b_total:
-            team_a.append(user)
-            team_a_total += score
-        else:
-            team_b.append(user)
-            team_b_total += score
-
-    with transaction.atomic():
-        TeamAssignment.objects.filter(session=session).delete()
-
-        for user in team_a:
-            TeamAssignment.objects.create(
-                session=session,
-                user=user,
-                team=TeamAssignment.TEAM_A
-            )
-
-        for user in team_b:
-            TeamAssignment.objects.create(
-                session=session,
-                user=user,
-                team=TeamAssignment.TEAM_B
-            )
-
-    return True
+    return "Needs Review"
 
 
+def _allocation_fairness_class(score):
+    if score >= 90:
+        return "fairness-excellent"
+
+    if score >= 75:
+        return "fairness-good"
+
+    if score >= 60:
+        return "fairness-warning"
+
+    return "fairness-danger"
 
 @login_required
 def generate_teams(request, session_id):
@@ -1012,52 +1012,81 @@ def generate_teams(request, session_id):
     if request.method != "POST":
         return redirect("session_detail", session_id=session.id)
 
-    if request.user != session.created_by:
+    if request.user != session.created_by and not request.user.is_staff:
         return HttpResponseForbidden("Only the organiser can generate teams.")
 
-    participants = (
+    all_participants = (
         Participation.objects
         .filter(session=session)
         .select_related("user", "user__profile")
         .order_by("user__username")
     )
 
+    attended_count = all_participants.filter(attended=True).count()
+
+    # If attendance has been marked, only use attended players.
+    # If nobody has been marked attended yet, use all joined players.
+    if attended_count > 0:
+        participants = all_participants.filter(attended=True)
+        allocation_mode = "attended players only"
+    else:
+        participants = all_participants
+        allocation_mode = "all joined players"
+
     if participants.count() < 2:
-        messages.error(request, "At least 2 players are needed to generate teams.")
+        messages.error(
+            request,
+            "At least 2 eligible players are needed to generate teams."
+        )
         return redirect("session_detail", session_id=session.id)
 
     allocation = allocate_teams_ml(participants)
 
+    eligible_user_ids = {
+        participation.user_id
+        for participation in participants
+    }
+
     with transaction.atomic():
+        # Delete all old team assignments for this session first.
         TeamAssignment.objects.filter(session=session).delete()
 
+        # Recreate teams using only eligible players.
         for player in allocation["team_a"]:
-            TeamAssignment.objects.create(
-                session=session,
-                user=player["user"],
-                team=TeamAssignment.TEAM_A,
-            )
+            if player["user"].id in eligible_user_ids:
+                TeamAssignment.objects.create(
+                    session=session,
+                    user=player["user"],
+                    team=TeamAssignment.TEAM_A,
+                )
 
         for player in allocation["team_b"]:
-            TeamAssignment.objects.create(
-                session=session,
-                user=player["user"],
-                team=TeamAssignment.TEAM_B,
-            )
+            if player["user"].id in eligible_user_ids:
+                TeamAssignment.objects.create(
+                    session=session,
+                    user=player["user"],
+                    team=TeamAssignment.TEAM_B,
+                )
 
     if allocation["used_ml"]:
         messages.success(
             request,
-            f"Teams generated using ML-assisted clustering. Fairness score: {allocation['fairness_score']}%."
+            (
+                f"Teams generated using ML-assisted clustering from {allocation_mode}. "
+                f"Fairness score: {allocation['fairness_score']}%."
+            )
         )
     else:
         messages.warning(
             request,
-            f"Teams generated using fallback balancing. Fairness score: {allocation['fairness_score']}%. {allocation['ml_reason']}"
+            (
+                f"Teams generated using fallback balancing from {allocation_mode}. "
+                f"Fairness score: {allocation['fairness_score']}%. "
+                f"{allocation['ml_reason']}"
+            )
         )
 
     return redirect("session_detail", session_id=session.id)
-
 
 @login_required
 def team_allocation(request, session_id):
@@ -1069,15 +1098,27 @@ def team_allocation(request, session_id):
     if request.user != session.created_by and not request.user.is_staff:
         return HttpResponseForbidden("Only the session organiser can access this allocation.")
 
-    participants = (
-        Participation.objects
-        .filter(session=session)
-        .select_related("user", "user__profile")
-        .order_by("user__username")
+
+    all_participants = (
+    Participation.objects
+    .filter(session=session)
+    .select_related("user", "user__profile")
+    .order_by("user__username")
     )
 
+    attended_count = all_participants.filter(attended=True).count()
+
+    # If attendance has been marked, only show attended players as eligible for allocation.
+    # If no attendance has been marked yet, show all joined players.
+    if attended_count > 0:
+        participants = all_participants.filter(attended=True)
+        excluded_participants = all_participants.filter(attended=False)
+    else:
+        participants = all_participants
+        excluded_participants = Participation.objects.none()
+
     current_count = participants.count()
-    team_size = round(current_count / 2) if current_count else 0
+    team_size = ceil(current_count / 2) if current_count else 0
 
     team_a_assignments = (
         TeamAssignment.objects
@@ -1093,8 +1134,15 @@ def team_allocation(request, session_id):
         .order_by("user__username")
     )
 
-    team_a_rows = [_build_player_row(assignment.user) for assignment in team_a_assignments]
-    team_b_rows = [_build_player_row(assignment.user) for assignment in team_b_assignments]
+    team_a_rows = [
+        _build_player_row(assignment.user)
+        for assignment in team_a_assignments
+    ]
+
+    team_b_rows = [
+        _build_player_row(assignment.user)
+        for assignment in team_b_assignments
+    ]
 
     allocated_user_ids = set(
         TeamAssignment.objects
@@ -1108,20 +1156,17 @@ def team_allocation(request, session_id):
         if participation.user_id not in allocated_user_ids
     ]
 
-    team_a_total = round(sum(row["score"] for row in team_a_rows), 1)
-    team_b_total = round(sum(row["score"] for row in team_b_rows), 1)
+    team_a_total = round(sum(row["score"] for row in team_a_rows), 2)
+    team_b_total = round(sum(row["score"] for row in team_b_rows), 2)
 
-    team_a_average = round(team_a_total / len(team_a_rows), 1) if team_a_rows else 0
-    team_b_average = round(team_b_total / len(team_b_rows), 1) if team_b_rows else 0
+    team_a_average = round(team_a_total / len(team_a_rows), 2) if team_a_rows else 0
+    team_b_average = round(team_b_total / len(team_b_rows), 2) if team_b_rows else 0
+
+    team_difference = round(abs(team_a_total - team_b_total), 2)
 
     fairness_score = _fairness_score(team_a_total, team_b_total)
-
-    if fairness_score >= 90:
-        fairness_label = "Fair"
-    elif fairness_score >= 75:
-        fairness_label = "Mostly Fair"
-    else:
-        fairness_label = "Needs Review"
+    fairness_label = _allocation_fairness_label(fairness_score)
+    fairness_class = _allocation_fairness_class(fairness_score)
 
     is_ready = current_count >= 2
     has_allocation = bool(team_a_rows or team_b_rows)
@@ -1141,9 +1186,11 @@ def team_allocation(request, session_id):
         "team_b_total": team_b_total,
         "team_a_average": team_a_average,
         "team_b_average": team_b_average,
+        "team_difference": team_difference,
 
         "fairness_score": fairness_score,
         "fairness_label": fairness_label,
+        "fairness_class": fairness_class,
 
         "radar_labels": [
             "Skill Level",
@@ -1154,6 +1201,13 @@ def team_allocation(request, session_id):
         ],
         "team_a_radar": _team_radar_data(team_a_rows),
         "team_b_radar": _team_radar_data(team_b_rows),
+
+        "ml_note": (
+            "ML-assisted allocation uses player skill, fitness, experience, "
+            "position preference, attendance reliability, and peer ratings."
+        ),
+        
+        "excluded_count": excluded_participants.count(),
 
         "sidebar_session_id": session.id,
     })
@@ -1504,7 +1558,22 @@ def leave_session(request, session_id):
     if request.method != "POST":
         return redirect("session_detail", session_id=session.id)
 
-    Participation.objects.filter(session=session, user=request.user).delete()
+    # Remove the player from the session
+    Participation.objects.filter(
+        session=session,
+        user=request.user,
+    ).delete()
+
+    # Also remove them from generated teams if teams already existed
+    TeamAssignment.objects.filter(
+        session=session,
+        user=request.user,
+    ).delete()
+
+    messages.warning(
+        request,
+        "You left the session. If teams had already been generated, the organiser may need to regenerate them."
+    )
 
     return redirect("session_detail", session_id=session.id)
 
@@ -1528,6 +1597,23 @@ def toggle_attendance(request, session_id, participation_id):
     participation.attended = not participation.attended
     participation.save(update_fields=["attended"])
 
+    # If player is marked as not attended, remove them from generated teams
+    if not participation.attended:
+        TeamAssignment.objects.filter(
+            session=session,
+            user=participation.user,
+        ).delete()
+
+        messages.warning(
+            request,
+            f"{participation.user.username} was marked as not attended and removed from the team allocation. Regenerate teams to keep them fair."
+        )
+    else:
+        messages.success(
+            request,
+            f"{participation.user.username} was marked as attended."
+        )
+
     user = participation.user
     joined = Participation.objects.filter(user=user).count()
     attended = Participation.objects.filter(user=user, attended=True).count()
@@ -1541,6 +1627,7 @@ def toggle_attendance(request, session_id, participation_id):
         profile.save(update_fields=["reliability_score"])
 
     return redirect("session_detail", session_id=session.id)
+
 
 @login_required
 def attendance_management(request, session_id):
@@ -1646,9 +1733,21 @@ def set_attendance_status(request, session_id, participation_id, status):
     if status == "attended":
         participation.attended = True
         message_text = f"{participation.user.username} marked as attended."
+
     elif status == "not-attended":
         participation.attended = False
-        message_text = f"{participation.user.username} marked as not attended."
+
+        # Remove from teams when marked as not attended
+        TeamAssignment.objects.filter(
+            session=session,
+            user=participation.user,
+        ).delete()
+
+        message_text = (
+            f"{participation.user.username} marked as not attended and removed from team allocation. "
+            "Regenerate teams to keep the allocation fair."
+        )
+
     else:
         messages.error(request, "Invalid attendance status.")
         return redirect("attendance_management", session_id=session.id)
@@ -1656,7 +1755,11 @@ def set_attendance_status(request, session_id, participation_id, status):
     participation.save(update_fields=["attended"])
     _update_user_reliability(participation.user)
 
-    messages.success(request, message_text)
+    if status == "not-attended":
+        messages.warning(request, message_text)
+    else:
+        messages.success(request, message_text)
+
     return redirect("attendance_management", session_id=session.id)
 
 

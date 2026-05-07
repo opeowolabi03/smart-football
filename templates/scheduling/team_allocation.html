@@ -20,12 +20,12 @@
           </div>
 
           <h1>Team Allocation / Fairness</h1>
-          <p>Automatically generate balanced teams using player data and a fairness algorithm.</p>
+          <p>Automatically generate balanced teams using player data and ML-assisted fairness scoring.</p>
         </div>
 
         <div class="allocation-header-actions">
           <a class="btn btn-outline allocation-header-btn" href="{% url 'session_detail' session.id %}">
-            Allocation History
+            Back to Match Details
           </a>
 
           <form method="post" action="{% url 'generate_teams' session.id %}">
@@ -44,6 +44,20 @@
               {{ message }}
             </div>
           {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if has_allocation %}
+        <div class="allocation-warning-note">
+          <strong>Team allocation already exists.</strong>
+          If players join or leave after teams are generated, regenerate the teams to keep the allocation fair.
+        </div>
+      {% endif %}
+
+      {% if excluded_count %}
+        <div class="allocation-warning-note">
+          <strong>{{ excluded_count }} player{{ excluded_count|pluralize }} excluded.</strong>
+          Players marked as not attended are not included in team generation.
         </div>
       {% endif %}
 
@@ -69,7 +83,14 @@
             <span class="allocation-warning-pill">Need at least 2 players</span>
           {% endif %}
 
-          <p>Teams are generated automatically based on skill, position, fitness, rating, and experience.</p>
+          <p>
+            Teams are generated using ML-assisted allocation based on skill, position,
+            fitness, peer rating, attendance reliability, and experience.
+          </p>
+
+          {% if ml_note %}
+            <p class="allocation-ml-note">{{ ml_note }}</p>
+          {% endif %}
         </div>
 
         <div class="allocation-summary-box">
@@ -89,7 +110,7 @@
 
         <div class="allocation-summary-box">
           <span>Allocation Mode</span>
-          <strong class="balanced-text">Balanced</strong>
+          <strong class="balanced-text">ML-assisted</strong>
         </div>
       </section>
 
@@ -132,6 +153,10 @@
                           <td>
                             <span class="mini-avatar">👤</span>
                             {{ row.username }}
+
+                            {% if row.user == user %}
+                              <span class="you-pill">You</span>
+                            {% endif %}
                           </td>
                           <td>{{ row.position }}</td>
                           <td><span class="score-badge">{{ row.score }}</span></td>
@@ -200,7 +225,8 @@
               </div>
 
               <div class="allocation-info-note">
-                Teams are balanced based on player rating, preferred position, fitness level, peer rating, and experience.
+                Teams are balanced based on player skill, preferred position, fitness level,
+                peer rating, attendance reliability, and experience.
               </div>
             {% else %}
               <div class="empty-state">
@@ -302,23 +328,23 @@
               </div>
 
               <div>
-                <span>Respect Preferences</span>
+                <span>Uses Peer Ratings</span>
                 <strong>Yes</strong>
               </div>
 
               <div>
-                <span>Allow Position Flexibility</span>
+                <span>Uses Attendance Reliability</span>
                 <strong>Yes</strong>
               </div>
 
               <div>
-                <span>Consider Past Teams</span>
-                <strong>Prototype</strong>
+                <span>Allocation Method</span>
+                <strong>ML-assisted</strong>
               </div>
             </div>
 
             <a class="btn btn-outline settings-btn" href="{% url 'session_detail' session.id %}">
-              Edit Settings
+              Back to Match
             </a>
           </section>
 

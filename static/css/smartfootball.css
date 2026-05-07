@@ -4737,3 +4737,17 @@ label {
 .results-mini:hover {
   background: rgba(11, 110, 79, 0.16);
 }
+
+.allocation-warning-note {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  color: #92400E;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  font-weight: 800;
+}
+
+.allocation-warning-note strong {
+  color: #78350F;
+}
